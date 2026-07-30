@@ -426,7 +426,7 @@
     <div class="modal-body" id="detailBody"></div>
     <div class="modal-foot">
       <button class="icon-btn" id="detailEditBtn" style="flex:1;justify-content:center;">✎ Editar</button>
-      <button class="icon-btn" id="detailPdfBtn" style="flex:1;justify-content:center;">📄 PDF de etapas</button>
+      <button class="icon-btn" id="detailPdfBtn" style="flex:1;justify-content:center;">📄 PDF</button>
       <button class="icon-btn" id="detailDeleteBtn" style="flex:1;justify-content:center;color:var(--red);">🗑 Eliminar</button>
     </div>
   </div>
@@ -673,9 +673,9 @@
         return '<div class="field-row"><label>🧑‍💼 Aprobación gerente de compras</label><input type="date" id="f_fecha_aprobacion_gerente" value="'+(p.fecha_aprobacion_gerente||'')+'"></div>';
       } },
     { id:"fecha_envio_documentacion", icon:"📤", label:"Documento solicitado al proveedor", row:function(p){
-        return '<div class="field-row"><label>📤 Documento solicitado al proveedor <span class="muted" style="font-weight:400;">(fecha y hora)</span> <span id="fechaEnvioDocConfToggle" style="cursor:pointer;color:var(--teal);font-weight:600;font-size:11.5px;">'+(p.fecha_envio_documentacion_confirmacion?'':'(+ 2da fecha)')+'</span></label><input type="datetime-local" id="f_fecha_envio_documentacion" value="'+(p.fecha_envio_documentacion||'')+'"></div>';
+        return '<div class="field-row"><label>📤 Documento solicitado al proveedor <span class="muted" style="font-weight:400;">(fecha y hora)</span> <span id="fechaEnvioDocConfToggle" style="cursor:pointer;color:var(--teal);font-weight:600;font-size:11.5px;">'+(p.fecha_envio_doc_confirmacion?'':'(+ 2da fecha)')+'</span></label><input type="datetime-local" id="f_fecha_envio_documentacion" value="'+(p.fecha_envio_documentacion||'')+'"></div>';
       }, extra:function(p){
-        return '<div class="field-row" id="fechaEnvioDocConfRow" style="'+(p.fecha_envio_documentacion_confirmacion?'':'display:none;')+'"><label>Documento reenviado / segunda solicitud <span class="muted" style="font-weight:400;">(opcional — fecha y hora)</span></label><input type="datetime-local" id="f_fecha_envio_documentacion_confirmacion" value="'+(p.fecha_envio_documentacion_confirmacion||'')+'"></div>';
+        return '<div class="field-row" id="fechaEnvioDocConfRow" style="'+(p.fecha_envio_doc_confirmacion?'':'display:none;')+'"><label>Documento reenviado / segunda solicitud <span class="muted" style="font-weight:400;">(opcional — fecha y hora)</span></label><input type="datetime-local" id="f_fecha_envio_doc_confirmacion" value="'+(p.fecha_envio_doc_confirmacion||'')+'"></div>';
       } },
     { id:"fecha_factura", icon:"🧾", label:"Factura y traspaso recibidos", row:function(p){
         return '<div class="field-row"><label>🧾 Factura y traspaso recibidos <span class="muted" style="font-weight:400;">(fecha y hora)</span></label><input type="datetime-local" id="f_fecha_factura" value="'+(p.fecha_factura||'')+'"></div>';
@@ -792,7 +792,7 @@
       fechaEnvioDocConfToggle.addEventListener("click", function(){
         $("fechaEnvioDocConfRow").style.display = "block";
         fechaEnvioDocConfToggle.style.display = "none";
-        $("f_fecha_envio_documentacion_confirmacion").focus();
+        $("f_fecha_envio_doc_confirmacion").focus();
       });
     }
     applyHomologVisibility();
@@ -812,7 +812,7 @@
       motivo_aprobacion: g("f_motivo_aprobacion"),
       fecha_aprobacion_gerente: g("f_fecha_aprobacion_gerente"),
       fecha_envio_documentacion: g("f_fecha_envio_documentacion"),
-      fecha_envio_documentacion_confirmacion: g("f_fecha_envio_documentacion_confirmacion"),
+      fecha_envio_doc_confirmacion: g("f_fecha_envio_doc_confirmacion"),
       fecha_factura: g("f_fecha_factura"),
       fecha_recepcion_bodega: g("f_fecha_recepcion_bodega"),
       nota_recepcion_bodega: g("f_nota_recepcion_bodega"),
@@ -1416,7 +1416,7 @@
   var CONFIRMACIONES_NOTA = [
     { key:"fecha_pedido_confirmacion", label:"Pedido reenviado / 2da confirmación" },
     { key:"fecha_aprobacion_confirmacion", label:"Aprobación reconfirmada" },
-    { key:"fecha_envio_documentacion_confirmacion", label:"Documento reenviado / 2da solicitud" }
+    { key:"fecha_envio_doc_confirmacion", label:"Documento reenviado / 2da solicitud" }
   ];
   function buildTiemposChipsHtml(p){
     var chips = [];
@@ -1684,7 +1684,7 @@
   var CONFIRMACIONES_NOTA_PDF = [
     { key:"fecha_pedido_confirmacion", label:"Pedido reenviado / 2da confirmación" },
     { key:"fecha_aprobacion_confirmacion", label:"Aprobación reconfirmada" },
-    { key:"fecha_envio_documentacion_confirmacion", label:"Documento reenviado / 2da solicitud" }
+    { key:"fecha_envio_doc_confirmacion", label:"Documento reenviado / 2da solicitud" }
   ];
   function downloadEtapasPdf(id){
     var p = state.pedidos.find(function(x){ return x.id===id; });
@@ -1986,7 +1986,7 @@
       motivo_aprobacion: $("f_motivo_aprobacion").value.trim() || null,
       fecha_aprobacion_gerente: $("f_fecha_aprobacion_gerente").value || null,
       fecha_envio_documentacion: $("f_fecha_envio_documentacion").value || null,
-      fecha_envio_documentacion_confirmacion: $("f_fecha_envio_documentacion_confirmacion") ? ($("f_fecha_envio_documentacion_confirmacion").value || null) : null,
+      fecha_envio_doc_confirmacion: $("f_fecha_envio_doc_confirmacion") ? ($("f_fecha_envio_doc_confirmacion").value || null) : null,
       fecha_factura: $("f_fecha_factura").value || null,
       numero_factura: $("f_numero_factura").value.trim() || null,
       fecha_envio_factura_comprador: $("f_fecha_envio_factura_comprador").value || null,
