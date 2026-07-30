@@ -1985,16 +1985,24 @@
     { key:"numero_embarque",              label:"N° de embarque",                               type:"text" }
   ];
   var FACTURA_RECIBIDA_IDX = ETAPAS.findIndex(function(e){ return e.estado === "Factura recibida"; });
+  // Por defecto solo se muestran estas dos etapas — son las que típicamente están listas para
+  // consolidar despacho. "En tránsito a CDF" y posteriores se ocultan por defecto porque, al llenar
+  // la factura fiscal Sababa aquí mismo, esos pedidos avanzan de etapa automáticamente (dejan de estar
+  // "en tránsito"). El filtro "Ver todos" permite mostrarlos igual si se necesita.
+  var CONSOLID_DEFAULT_ESTADOS = ["Factura recibida", "En bodega Sababa"];
+  var consolidateSelectedIds = null; // Set<string>, se mantiene al cambiar el filtro
 
-  function pedidosConsolidables(){
+  function pedidosConsolidables(modeAll){
     return state.pedidos.filter(function(p){
       if(p.cancelado) return false;
-      return lastFilledStageIndex(p) >= FACTURA_RECIBIDA_IDX;
+      if(lastFilledStageIndex(p) < FACTURA_RECIBIDA_IDX) return false;
+      if(modeAll) return true;
+      return CONSOLID_DEFAULT_ESTADOS.indexOf(estadoPedido(p).label) !== -1;
     }).sort(function(a,b){ return (a.proveedor||"").localeCompare(b.proveedor||""); });
   }
 
   function renderConsolidateModal(){
-    var candidatos = pedidosConsolidables();
+    consolidateSelectedIds = new Set();
     var html = '';
     html += '<div class="modal-section-title">Datos globales a aplicar</div>';
     html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">Completa solo los campos que quieras aplicar — los que dejes en blanco no modifican nada. Se copiarán tal cual a todos los pedidos que marques abajo.</div>';
@@ -2004,15 +2012,33 @@
     });
     html += '</div>';
 
-    html += '<div class="modal-section-title">Pedidos a consolidar <span class="muted" style="font-weight:400;font-size:11px;">(en "Factura recibida" o etapas posteriores, no cancelados)</span></div>';
+    html += '<div class="modal-section-title">Pedidos a consolidar</div>';
+    html += '<div class="field-row"><label>Filtro</label><select id="cfFilterSelect" class="icon-btn" style="cursor:pointer;width:100%;">'+
+      '<option value="default">Por defecto: Factura recibida + En bodega Sababa</option>'+
+      '<option value="all">Ver todos (desde "Factura recibida" en adelante)</option>'+
+    '</select></div>';
+    html += '<div id="cfPedidosListWrap"></div>';
+
+    $("consolidateBody").innerHTML = html;
+    $("cfFilterSelect").addEventListener("change", renderConsolidatePedidosList);
+    renderConsolidatePedidosList();
+  }
+
+  function renderConsolidatePedidosList(){
+    var modeAll = $("cfFilterSelect").value === "all";
+    var candidatos = pedidosConsolidables(modeAll);
+    var html = '';
     if(!candidatos.length){
-      html += '<div class="empty-state">No hay pedidos en "Factura recibida" o etapas posteriores por ahora.</div>';
+      html += '<div class="empty-state">'+(modeAll
+        ? 'No hay pedidos en "Factura recibida" o etapas posteriores por ahora.'
+        : 'No hay pedidos en "Factura recibida" o "En bodega Sababa" por ahora. Prueba el filtro "Ver todos".')+'</div>';
     } else {
       html += '<div style="margin:0 0 8px;"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--text-muted);"><input type="checkbox" id="cfSelectAll" style="width:auto;"> Seleccionar todos ('+candidatos.length+')</label></div>';
       html += '<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:10px;">';
       candidatos.forEach(function(p){
+        var checked = consolidateSelectedIds.has(p.id) ? ' checked' : '';
         html += '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;">'+
-          '<input type="checkbox" class="cfPedidoChk" data-id="'+p.id+'" style="width:auto;flex:none;">'+
+          '<input type="checkbox" class="cfPedidoChk" data-id="'+p.id+'"'+checked+' style="width:auto;flex:none;">'+
           '<span style="flex:1;">'+esc(p.proveedor||"—")+(p.numero_pedido?' <span class="muted">#'+esc(p.numero_pedido)+'</span>':'')+'</span>'+
           '<span class="muted" style="font-size:11.5px;">'+esc(estadoPedido(p).label)+'</span>'+
           '<span class="muted" style="font-size:11.5px;">'+(p.bultos_final!=null?p.bultos_final+" blts":"")+'</span>'+
@@ -2020,13 +2046,25 @@
       });
       html += '</div>';
     }
-    $("consolidateBody").innerHTML = html;
+    $("cfPedidosListWrap").innerHTML = html;
 
     var selectAll = $("cfSelectAll");
+    var chks = document.querySelectorAll(".cfPedidoChk");
+    chks.forEach(function(c){
+      c.addEventListener("change", function(){
+        if(c.checked) consolidateSelectedIds.add(c.dataset.id);
+        else consolidateSelectedIds.delete(c.dataset.id);
+        if(selectAll) selectAll.checked = Array.prototype.every.call(chks, function(x){ return x.checked; });
+      });
+    });
     if(selectAll){
+      selectAll.checked = chks.length>0 && Array.prototype.every.call(chks, function(x){ return x.checked; });
       selectAll.addEventListener("change", function(){
-        var chks = document.querySelectorAll(".cfPedidoChk");
-        chks.forEach(function(c){ c.checked = selectAll.checked; });
+        chks.forEach(function(c){
+          c.checked = selectAll.checked;
+          if(selectAll.checked) consolidateSelectedIds.add(c.dataset.id);
+          else consolidateSelectedIds.delete(c.dataset.id);
+        });
       });
     }
   }
@@ -2042,7 +2080,7 @@
   // solo con "Cancelar" o la ✕ — para evitar perder la selección/datos por accidente.
 
   $("consolidateApplyBtn").addEventListener("click", function(){
-    var ids = Array.prototype.map.call(document.querySelectorAll(".cfPedidoChk:checked"), function(c){ return c.dataset.id; });
+    var ids = Array.from(consolidateSelectedIds || []);
     if(!ids.length){ showToast("Selecciona al menos un pedido", true); return; }
 
     var patch = {};
