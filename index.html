@@ -312,11 +312,14 @@
   .homolog-block{background:var(--glow-2);border:1px solid var(--border-soft);border-radius:10px;padding:10px 12px;margin-top:4px;}
 
   .totals-bar{
-    display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-content:flex-end;
+    display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-content:space-between;
     background:var(--surface);border:1px solid var(--border);border-radius:10px;
     padding:10px 16px;margin-top:12px;font-size:13px;color:var(--text-muted);
   }
   .totals-bar b{color:var(--text);font-family:var(--mono);}
+  .totals-bar span{flex:1 1 0;text-align:center;}
+  .totals-bar span:first-child{text-align:left;}
+  .totals-bar span:last-child{text-align:right;}
 
   .tiempos-inline{overflow:hidden;max-height:0;transition:max-height .22s ease;background:rgba(255,255,255,.02);}
   .tiempos-inline.open{max-height:200px;}
@@ -392,6 +395,7 @@
     <div class="toolbar-actions">
       <button class="btn-secondary" id="notifBtn">🔔 Notificaciones <span id="notifCount" class="hidden" style="background:var(--red);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px;">0</span></button>
       <button class="btn-secondary" id="settingsBtn">⚙ Umbral: <span id="umbralLabel">20</span>d</button>
+      <button class="btn-secondary" id="consolidateBtn">🧾 Consolidar despacho</button>
       <button class="btn-primary" id="addBtn">＋ Agregar pedido</button>
     </div>
   </div>
@@ -441,6 +445,20 @@
     <div class="modal-body" id="formBody"></div>
     <div class="modal-foot">
       <button class="btn-primary" id="formSaveBtn" style="flex:1;">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="consolidateModal">
+  <div class="modal-box" style="max-width:760px;">
+    <div class="modal-head">
+      <div class="modal-title">🧾 Consolidar despacho a Sababa<small>Aplica los mismos datos de trámite a varios pedidos facturados de una sola vez</small></div>
+      <button class="modal-close" id="consolidateClose">✕</button>
+    </div>
+    <div class="modal-body" id="consolidateBody"></div>
+    <div class="modal-foot">
+      <button class="icon-btn" id="consolidateCancelBtn" style="flex:1;justify-content:center;">Cancelar</button>
+      <button class="btn-primary" id="consolidateApplyBtn" style="flex:2;">Aplicar a los pedidos seleccionados</button>
     </div>
   </div>
 </div>
@@ -1677,7 +1695,8 @@
     $("detailModal").classList.remove("hidden");
   }
   $("detailClose").addEventListener("click", function(){ $("detailModal").classList.add("hidden"); });
-  $("detailModal").addEventListener("click", function(e){ if(e.target===$("detailModal")) $("detailModal").classList.add("hidden"); });
+  // Nota: el modal de detalle ya NO se cierra al hacer clic afuera — solo con el botón de cerrar.
+  // Esto evita que se cierre por accidente al seleccionar/copiar texto (ej. el número de pedido) con el mouse.
   $("detailEditBtn").addEventListener("click", function(){ $("detailModal").classList.add("hidden"); openForm(state.editingId); });
   $("detailPdfBtn").addEventListener("click", function(){ downloadEtapasPdf(state.editingId); });
 
@@ -1763,6 +1782,38 @@
   });
 
   // ---------- formulario agregar/editar ----------
+  // ---------- borrador de formulario (localStorage) ----------
+  // Mientras se edita/agrega un pedido, cada cambio se guarda en localStorage. Si el modal se cierra
+  // por accidente (o se cierra la app) antes de darle "Guardar", al volver a abrir ese mismo pedido
+  // (o "Agregar pedido") se recupera automáticamente lo que se había escrito. El borrador solo se
+  // borra cuando el pedido se guarda exitosamente con el botón "Guardar".
+  function draftKey(id){ return "zl_draft_pedido_" + (id || "__nuevo__"); }
+  function collectDraftValues(){
+    var values = {};
+    var body = $("formBody");
+    if(!body) return values;
+    var els = body.querySelectorAll("[id^='f_']");
+    for(var i=0;i<els.length;i++){
+      var el = els[i];
+      values[el.id] = (el.type === "checkbox") ? el.checked : el.value;
+    }
+    return values;
+  }
+  var draftSaveTimer = null;
+  function scheduleDraftSave(){
+    clearTimeout(draftSaveTimer);
+    draftSaveTimer = setTimeout(function(){
+      try{
+        localStorage.setItem(draftKey(state.editingId), JSON.stringify({ ts: Date.now(), values: collectDraftValues() }));
+      }catch(e){}
+    }, 400);
+  }
+  function clearDraft(id){
+    try{ localStorage.removeItem(draftKey(id)); }catch(e){}
+  }
+  $("formBody").addEventListener("input", scheduleDraftSave);
+  $("formBody").addEventListener("change", scheduleDraftSave);
+
   function openForm(id){
     state.editingId = id || null;
     var p = id ? state.pedidos.find(function(x){ return x.id===id; }) : {};
@@ -1893,10 +1944,149 @@
       });
     }
 
+    // ---------- restaurar borrador (si existe) ----------
+    var draftRaw = null;
+    try{ draftRaw = localStorage.getItem(draftKey(id)); }catch(e){}
+    if(draftRaw){
+      var draft = null;
+      try{ draft = JSON.parse(draftRaw); }catch(e){}
+      if(draft && draft.values){
+        Object.keys(draft.values).forEach(function(fid){
+          var el = document.getElementById(fid);
+          if(!el) return;
+          if(el.type === "checkbox") el.checked = !!draft.values[fid];
+          else el.value = draft.values[fid];
+        });
+        // re-aplicar visibilidad de secciones condicionales según los valores restaurados
+        if($("f_categoria").value){ $("f_categoria").style.display = "block"; if(catToggle) catToggle.style.display = "none"; }
+        if($("f_cotizacion").value){ $("f_cotizacion").style.display = "block"; if(cotizacionToggle) cotizacionToggle.style.display = "none"; }
+        $("estimadaRow").style.display = $("f_tipo_pedido").value === "futuro" ? "block" : "none";
+        $("canceladoFields").style.display = $("f_cancelado").checked ? "block" : "none";
+        $("diasCreditoRow").style.display = $("f_credito").checked ? "block" : "none";
+        $("fechaPagoRow").style.display = $("f_credito").checked ? "none" : "block";
+        if(typeof applyHomologVisibility === "function") applyHomologVisibility();
+        actualizarMontoPendiente();
+        showToast("Se recuperó un borrador sin guardar de este pedido (" + new Date(draft.ts).toLocaleString() + ")");
+      }
+    }
   }
   $("addBtn").addEventListener("click", function(){ openForm(null); });
+
+  // ---------- consolidación de despacho a Sababa ----------
+  // Permite elegir varios pedidos ya facturados (etapa "Factura recibida" en adelante) y aplicarles
+  // de una sola vez los mismos datos de trámite/despacho, en lugar de digitarlos pedido por pedido.
+  var CONSOLID_FIELDS = [
+    { key:"fecha_envio_sabada",           label:"Instrucciones enviadas al tramitador (fecha)", type:"date" },
+    { key:"fecha_despacho_sabada",        label:"Fecha de despacho Sababa",                     type:"date" },
+    { key:"numero_factura_fiscal_sababa", label:"N° de factura fiscal Sababa",                  type:"text" },
+    { key:"fecha_factura_fiscal_sababa",  label:"Fecha de factura fiscal Sababa",               type:"date" },
+    { key:"fecha_recepcion_bodega",       label:"Fecha de recepción en bodega Sababa",          type:"date" },
+    { key:"fecha_recepcion_final",        label:"Fecha de recepción final (CDF)",               type:"date" },
+    { key:"numero_embarque",              label:"N° de embarque",                               type:"text" }
+  ];
+  var FACTURA_RECIBIDA_IDX = ETAPAS.findIndex(function(e){ return e.estado === "Factura recibida"; });
+
+  function pedidosConsolidables(){
+    return state.pedidos.filter(function(p){
+      if(p.cancelado) return false;
+      return lastFilledStageIndex(p) >= FACTURA_RECIBIDA_IDX;
+    }).sort(function(a,b){ return (a.proveedor||"").localeCompare(b.proveedor||""); });
+  }
+
+  function renderConsolidateModal(){
+    var candidatos = pedidosConsolidables();
+    var html = '';
+    html += '<div class="modal-section-title">Datos globales a aplicar</div>';
+    html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">Completa solo los campos que quieras aplicar — los que dejes en blanco no modifican nada. Se copiarán tal cual a todos los pedidos que marques abajo.</div>';
+    html += '<div class="field-grid">';
+    CONSOLID_FIELDS.forEach(function(f){
+      html += '<div class="field-row"><label>'+esc(f.label)+'</label><input type="'+f.type+'" id="cf_'+f.key+'"></div>';
+    });
+    html += '</div>';
+
+    html += '<div class="modal-section-title">Pedidos a consolidar <span class="muted" style="font-weight:400;font-size:11px;">(en "Factura recibida" o etapas posteriores, no cancelados)</span></div>';
+    if(!candidatos.length){
+      html += '<div class="empty-state">No hay pedidos en "Factura recibida" o etapas posteriores por ahora.</div>';
+    } else {
+      html += '<div style="margin:0 0 8px;"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--text-muted);"><input type="checkbox" id="cfSelectAll" style="width:auto;"> Seleccionar todos ('+candidatos.length+')</label></div>';
+      html += '<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:10px;">';
+      candidatos.forEach(function(p){
+        html += '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;">'+
+          '<input type="checkbox" class="cfPedidoChk" data-id="'+p.id+'" style="width:auto;flex:none;">'+
+          '<span style="flex:1;">'+esc(p.proveedor||"—")+(p.numero_pedido?' <span class="muted">#'+esc(p.numero_pedido)+'</span>':'')+'</span>'+
+          '<span class="muted" style="font-size:11.5px;">'+esc(estadoPedido(p).label)+'</span>'+
+          '<span class="muted" style="font-size:11.5px;">'+(p.bultos_final!=null?p.bultos_final+" blts":"")+'</span>'+
+        '</label>';
+      });
+      html += '</div>';
+    }
+    $("consolidateBody").innerHTML = html;
+
+    var selectAll = $("cfSelectAll");
+    if(selectAll){
+      selectAll.addEventListener("change", function(){
+        var chks = document.querySelectorAll(".cfPedidoChk");
+        chks.forEach(function(c){ c.checked = selectAll.checked; });
+      });
+    }
+  }
+
+  function openConsolidateModal(){
+    renderConsolidateModal();
+    $("consolidateModal").classList.remove("hidden");
+  }
+  $("consolidateBtn").addEventListener("click", openConsolidateModal);
+  $("consolidateClose").addEventListener("click", function(){ $("consolidateModal").classList.add("hidden"); });
+  $("consolidateCancelBtn").addEventListener("click", function(){ $("consolidateModal").classList.add("hidden"); });
+  // Este modal, igual que el de detalle/formulario, no se cierra al hacer clic afuera —
+  // solo con "Cancelar" o la ✕ — para evitar perder la selección/datos por accidente.
+
+  $("consolidateApplyBtn").addEventListener("click", function(){
+    var ids = Array.prototype.map.call(document.querySelectorAll(".cfPedidoChk:checked"), function(c){ return c.dataset.id; });
+    if(!ids.length){ showToast("Selecciona al menos un pedido", true); return; }
+
+    var patch = {};
+    CONSOLID_FIELDS.forEach(function(f){
+      var el = $("cf_"+f.key);
+      var v = el ? el.value.trim() : "";
+      if(v) patch[f.key] = v;
+    });
+    if(!Object.keys(patch).length){ showToast("Completa al menos un campo global para aplicar", true); return; }
+    patch.updated_at = new Date().toISOString();
+
+    if(!aw){ showToast("No hay conexión a Appwrite configurada", true); return; }
+    var applyBtn = this;
+    applyBtn.disabled = true;
+    var ov = showSaveOverlay("Consolidando "+ids.length+" pedido(s)…", "Sincronizando con Appwrite");
+
+    var pendientes = ids.slice();
+    var fallidos = [];
+    function siguiente(){
+      if(!pendientes.length){
+        applyBtn.disabled = false;
+        if(fallidos.length){
+          saveOverlayError(ov, fallidos.length+" pedido(s) no se pudieron actualizar");
+          setTimeout(function(){ ov.remove(); }, 2400);
+        } else {
+          saveOverlaySuccess(ov, "Consolidación aplicada a "+ids.length+" pedido(s)");
+          setTimeout(function(){
+            ov.remove();
+            $("consolidateModal").classList.add("hidden");
+            loadPedidos();
+          }, 700);
+        }
+        return;
+      }
+      var rowId = pendientes.shift();
+      awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: rowId, data: patch })
+        .then(siguiente)
+        .catch(function(err){ console.error(err); fallidos.push(rowId); siguiente(); });
+    }
+    siguiente();
+  });
   $("formClose").addEventListener("click", function(){ $("formModal").classList.add("hidden"); });
-  $("formModal").addEventListener("click", function(e){ if(e.target===$("formModal")) $("formModal").classList.add("hidden"); });
+  // Nota: el modal de formulario (Agregar/Editar pedido) ya NO se cierra al hacer clic afuera — solo con
+  // el botón de cerrar. Esto evita que se cierre por accidente al seleccionar/copiar texto de un campo.
 
   $("personalizeClose").addEventListener("click", function(){ $("personalizeModal").classList.add("hidden"); });
   $("personalizeModal").addEventListener("click", function(e){ if(e.target===$("personalizeModal")) $("personalizeModal").classList.add("hidden"); });
@@ -2014,6 +2204,7 @@
       ? awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: state.editingId, data: payload })
       : awDb.createRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: aw.ID.unique(), data: payload });
     req.then(function(){
+      clearDraft(state.editingId);
       saveOverlaySuccess(ov, state.editingId ? "Pedido actualizado" : "Pedido agregado");
       setTimeout(function(){
         ov.remove();
