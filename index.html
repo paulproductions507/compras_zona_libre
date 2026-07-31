@@ -456,10 +456,18 @@
       <div class="modal-title">👥 Grupo múltiple<small>Aplica los mismos datos de trámite a todos los pedidos creados juntos desde un mismo correo</small></div>
       <button class="modal-close" id="groupClose">✕</button>
     </div>
+    <div style="display:flex;gap:8px;padding:0 24px;margin-top:-6px;">
+      <button type="button" class="icon-btn" id="groupTabVer" style="flex:1;justify-content:center;">Grupos existentes</button>
+      <button type="button" class="icon-btn" id="groupTabAsignar" style="flex:1;justify-content:center;">＋ Asignar pedidos existentes</button>
+    </div>
     <div class="modal-body" id="groupBody"></div>
-    <div class="modal-foot">
+    <div class="modal-foot" id="groupFootVer">
       <button class="icon-btn" id="groupCancelBtn" style="flex:1;justify-content:center;">Cancelar</button>
       <button class="btn-primary" id="groupApplyBtn" style="flex:2;">Aplicar al grupo seleccionado</button>
+    </div>
+    <div class="modal-foot hidden" id="groupFootAsignar">
+      <button class="icon-btn" id="groupCancelBtn2" style="flex:1;justify-content:center;">Cancelar</button>
+      <button class="btn-primary" id="groupAsignarBtn" style="flex:2;">Marcar seleccionados como múltiple</button>
     </div>
   </div>
 </div>
@@ -2287,14 +2295,117 @@
     });
   }
 
+  // ---------- asignar pedidos existentes a un grupo múltiple ----------
+  // Permite tomar pedidos que ya existían (creados antes de esta función, o creados uno por uno)
+  // y marcarlos como parte de un grupo múltiple — nuevo o ya existente — sin tener que recrearlos.
+  var asignarSelectedIds = {};
+  var asignarSearchTerm = "";
+
+  function pedidosSinGrupo(term){
+    term = (term||"").trim().toLowerCase();
+    return state.pedidos.filter(function(p){
+      if(p.grupo_multiple) return false;
+      if(!term) return true;
+      var hay = [p.proveedor, p.numero_pedido, p.numero_factura, p.comprador].filter(Boolean).join(" ").toLowerCase();
+      return hay.indexOf(term) !== -1;
+    });
+  }
+
+  function renderAsignarView(){
+    var grupos = gruposMultiples();
+    var lista = pedidosSinGrupo(asignarSearchTerm);
+    var html = '';
+    html += '<div class="field-row"><label>Buscar pedidos sin grupo</label><input type="text" id="aBuscar" class="search-input" placeholder="Proveedor, # pedido, # factura o comprador..." value="'+esc(asignarSearchTerm)+'"></div>';
+    html += '<div class="field-row"><label>Destino</label><select id="aDestino" class="icon-btn" style="cursor:pointer;width:100%;">'+
+      '<option value="__nuevo__">＋ Crear grupo nuevo</option>'+
+      grupos.map(function(g){ return '<option value="'+esc(g.id)+'">'+esc(g.proveedor||"—")+' — '+g.items.length+' pedido(s) ya en el grupo</option>'; }).join("")+
+    '</select></div>';
+    html += '<div class="modal-section-title">Pedidos disponibles ('+lista.length+')</div>';
+    html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">Solo se listan pedidos que todavía no pertenecen a ningún grupo múltiple. Marca los que quieras unir.</div>';
+    if(!lista.length){
+      html += '<div class="empty-state">No hay pedidos sin grupo que coincidan con la búsqueda.</div>';
+    } else {
+      html += '<div style="max-height:260px;overflow:auto;border:1px solid var(--border);border-radius:10px;">';
+      lista.forEach(function(p){
+        html += '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;">'+
+          '<input type="checkbox" class="aPedidoChk" data-id="'+p.id+'" '+(asignarSelectedIds[p.id]?'checked':'')+' style="width:auto;flex:none;">'+
+          '<span style="flex:1;">'+esc(p.proveedor||"—")+(p.numero_pedido?' <span class="muted">#'+esc(p.numero_pedido)+'</span>':'')+'</span>'+
+          '<span class="muted" style="font-size:11.5px;">'+esc(estadoPedido(p).label)+'</span>'+
+          '<span class="muted" style="font-size:11.5px;">'+(p.monto_pedido!=null?fmtUSD(p.monto_pedido):'')+'</span>'+
+        '</label>';
+      });
+      html += '</div>';
+    }
+    $("groupBody").innerHTML = html;
+    $("aBuscar").addEventListener("input", function(){ asignarSearchTerm = this.value; renderAsignarView(); this.focus(); this.setSelectionRange(this.value.length, this.value.length); });
+    document.querySelectorAll(".aPedidoChk").forEach(function(c){
+      c.addEventListener("change", function(){
+        if(c.checked) asignarSelectedIds[c.dataset.id] = true;
+        else delete asignarSelectedIds[c.dataset.id];
+      });
+    });
+  }
+
+  function switchGroupTab(tab){
+    var verTab = tab === "ver";
+    $("groupTabVer").style.background = verTab ? "var(--teal)" : "";
+    $("groupTabVer").style.color = verTab ? "#04211c" : "";
+    $("groupTabAsignar").style.background = !verTab ? "var(--teal)" : "";
+    $("groupTabAsignar").style.color = !verTab ? "#04211c" : "";
+    $("groupFootVer").classList.toggle("hidden", !verTab);
+    $("groupFootAsignar").classList.toggle("hidden", verTab);
+    if(verTab){ renderGroupModal(); }
+    else { asignarSelectedIds = {}; renderAsignarView(); }
+  }
+
   function openGroupModal(){
-    renderGroupModal();
+    switchGroupTab("ver");
     $("groupModal").classList.remove("hidden");
   }
   $("groupBtn").addEventListener("click", openGroupModal);
+  $("groupTabVer").addEventListener("click", function(){ switchGroupTab("ver"); });
+  $("groupTabAsignar").addEventListener("click", function(){ switchGroupTab("asignar"); });
   $("groupClose").addEventListener("click", function(){ $("groupModal").classList.add("hidden"); });
   $("groupCancelBtn").addEventListener("click", function(){ $("groupModal").classList.add("hidden"); });
+  $("groupCancelBtn2").addEventListener("click", function(){ $("groupModal").classList.add("hidden"); });
   // Igual que los otros modales, no se cierra al hacer clic afuera.
+
+  $("groupAsignarBtn").addEventListener("click", function(){
+    var ids = Object.keys(asignarSelectedIds);
+    if(!ids.length){ showToast("Selecciona al menos un pedido", true); return; }
+    if(!aw){ showToast("No hay conexión a Appwrite configurada", true); return; }
+    var destino = $("aDestino").value;
+    var grupoId = destino === "__nuevo__" ? aw.ID.unique() : destino;
+
+    var asignarBtn = this;
+    asignarBtn.disabled = true;
+    var ov = showSaveOverlay("Asignando "+ids.length+" pedido(s) al grupo…", "Sincronizando con Appwrite");
+
+    var pendientes = ids.slice();
+    var fallidos = [];
+    function siguiente(){
+      if(!pendientes.length){
+        asignarBtn.disabled = false;
+        if(fallidos.length){
+          saveOverlayError(ov, fallidos.length+" pedido(s) no se pudieron asignar");
+          setTimeout(function(){ ov.remove(); }, 2400);
+        } else {
+          saveOverlaySuccess(ov, ids.length+" pedido(s) asignado(s) al grupo");
+          setTimeout(function(){
+            ov.remove();
+            asignarSelectedIds = {};
+            loadPedidos().then(function(){ switchGroupTab("ver"); });
+          }, 700);
+        }
+        return;
+      }
+      var rowId = pendientes.shift();
+      awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: rowId, data: { grupo_multiple: grupoId, updated_at: new Date().toISOString() } })
+        .then(siguiente)
+        .catch(function(err){ console.error(err); fallidos.push(rowId); siguiente(); });
+    }
+    siguiente();
+  });
 
   $("groupApplyBtn").addEventListener("click", function(){
     var ids = Array.from(groupSelectedIds || []);
