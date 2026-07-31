@@ -462,6 +462,7 @@
     </div>
     <div class="modal-body" id="groupBody"></div>
     <div class="modal-foot" id="groupFootVer">
+      <button class="icon-btn" id="groupDeleteBtn" style="flex:1;justify-content:center;color:var(--red);">🗑️ Eliminar grupo</button>
       <button class="icon-btn" id="groupCancelBtn" style="flex:1;justify-content:center;">Cancelar</button>
       <button class="btn-primary" id="groupApplyBtn" style="flex:2;">Aplicar al grupo seleccionado</button>
     </div>
@@ -2207,23 +2208,30 @@
   // "grupo_multiple" (id interno). Esta pantalla permite elegir ese grupo y aplicarle de una sola vez
   // datos de trámite de etapas tempranas (aprobación, documentación, factura, OC) además de los de
   // despacho Sababa — sin mezclar con pedidos que no pertenecen a ningún grupo múltiple.
+  // IMPORTANTE: el "type" de cada campo aquí debe coincidir EXACTO con el tipo de su <input>
+  // en el formulario individual (ver f_fecha_... en REORDER_FIELDS). Varios de estos campos
+  // se guardan como fecha+hora ("datetime-local") en el pedido individual — si aquí se aplican
+  // como solo-fecha ("date"), el valor queda en un formato que el input datetime-local del
+  // formulario individual no puede mostrar, y el campo aparece vacío aunque sí se haya guardado.
   var GROUP_FIELDS = [
-    { key:"fecha_aprobacion",             label:"Fecha de aprobación del comprador",         type:"date" },
+    { key:"fecha_aprobacion",             label:"Fecha de aprobación del comprador",         type:"datetime-local" },
     { key:"fecha_aprobacion_gerente",     label:"Fecha de aprobación de gerencia",            type:"date" },
-    { key:"fecha_envio_documentacion",    label:"Fecha de documento solicitado al proveedor", type:"date" },
-    { key:"fecha_factura",                label:"Fecha de factura y traspaso recibidos",      type:"date" },
-    { key:"numero_factura",               label:"N° de factura",                              type:"text" },
-    { key:"fecha_envio_factura_comprador",label:"Fecha de factura enviada al comprador",      type:"date" },
-    { key:"fecha_orden_compra",           label:"Fecha de orden de compra entregada",         type:"date" },
+    { key:"fecha_envio_documentacion",    label:"Fecha de documento solicitado al proveedor", type:"datetime-local" },
+    { key:"fecha_factura",                label:"Fecha de factura y traspaso recibidos",      type:"datetime-local" },
+    { key:"fecha_envio_factura_comprador",label:"Fecha de factura enviada al comprador",      type:"datetime-local" },
+    { key:"fecha_orden_compra",           label:"Fecha de orden de compra entregada",         type:"datetime-local" },
     { key:"numero_oc_madre",              label:"N° de OC madre",                             type:"text" },
     { key:"fecha_recepcion_bodega",       label:"Fecha de recepción en bodega Sababa",        type:"date" },
-    { key:"fecha_envio_sabada",           label:"Instrucciones enviadas al tramitador (fecha)", type:"date" },
+    { key:"fecha_envio_sabada",           label:"Instrucciones enviadas al tramitador (fecha)", type:"datetime-local" },
     { key:"fecha_despacho_sabada",        label:"Fecha de despacho Sababa",                   type:"date" },
     { key:"numero_factura_fiscal_sababa", label:"N° de factura fiscal Sababa",                type:"text" },
     { key:"fecha_factura_fiscal_sababa",  label:"Fecha de factura fiscal Sababa",             type:"date" },
     { key:"fecha_recepcion_final",        label:"Fecha de recepción final (CDF)",             type:"date" },
     { key:"numero_embarque",              label:"N° de embarque",                             type:"text" }
   ];
+  // "N° de factura" se quitó de arriba a propósito: cada pedido de un mismo grupo casi siempre
+  // tiene su propia factura distinta, así que se maneja con su propio widget de asignación
+  // individual más abajo (ver "Asignar N° de factura por pedido").
 
   function gruposMultiples(){
     var porGrupo = {};
@@ -2278,6 +2286,23 @@
     });
     html += '</div>';
 
+    // Cada pedido de un grupo casi siempre tiene su propia factura, así que en vez de un solo
+    // campo aplicado a todos, esto permite: escribir un número, marcar a cuáles pedidos
+    // pertenece, presionar "Asignar" (se guarda de inmediato), y repetir con el siguiente número.
+    html += '<div class="modal-section-title">Asignar N° de factura por pedido</div>';
+    html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">Escribe el número de factura, marca a qué pedido(s) de este grupo pertenece y presiona "Asignar". Se guarda al instante — repite con cada número distinto.</div>';
+    html += '<div class="field-row"><label>N° de factura</label><input type="text" id="gFacturaInput" placeholder="Ej. 20009861"></div>';
+    html += '<div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;">';
+    (grupo ? grupo.items : []).forEach(function(p){
+      html += '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;">'+
+        '<input type="checkbox" class="gFacturaChk" data-id="'+p.id+'" style="width:auto;flex:none;">'+
+        '<span style="flex:1;">'+esc(p.proveedor||"—")+(p.numero_pedido?' <span class="muted">#'+esc(p.numero_pedido)+'</span>':'')+'</span>'+
+        '<span style="font-size:11.5px;'+(p.numero_factura?'':'color:var(--red);')+'">'+(p.numero_factura?('Factura: '+esc(p.numero_factura)):'Sin factura')+'</span>'+
+      '</label>';
+    });
+    html += '</div>';
+    html += '<button type="button" class="icon-btn" id="gFacturaAsignarBtn" style="width:100%;justify-content:center;margin-bottom:20px;">🧾 Asignar factura a los seleccionados</button>';
+
     html += '<div class="modal-section-title">Datos a aplicar a todo el grupo</div>';
     html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">Completa solo los campos que quieras aplicar — los que dejes en blanco no modifican nada.</div>';
     html += '<div class="field-grid">';
@@ -2292,6 +2317,38 @@
         if(c.checked) groupSelectedIds.add(c.dataset.id);
         else groupSelectedIds.delete(c.dataset.id);
       });
+    });
+
+    $("gFacturaAsignarBtn").addEventListener("click", function(){
+      var val = $("gFacturaInput").value.trim();
+      if(!val){ showToast("Escribe un número de factura", true); return; }
+      var ids = Array.from(document.querySelectorAll(".gFacturaChk:checked")).map(function(c){ return c.dataset.id; });
+      if(!ids.length){ showToast("Selecciona al menos un pedido para esta factura", true); return; }
+      if(!aw){ showToast("No hay conexión a Appwrite configurada", true); return; }
+      var btn = this;
+      btn.disabled = true;
+      var ov = showSaveOverlay("Asignando factura a "+ids.length+" pedido(s)…", "Sincronizando con Appwrite");
+      var pendientes = ids.slice();
+      var fallidos = [];
+      function siguiente(){
+        if(!pendientes.length){
+          btn.disabled = false;
+          if(fallidos.length){
+            saveOverlayError(ov, fallidos.length+" pedido(s) no se pudieron actualizar");
+            setTimeout(function(){ ov.remove(); }, 2400);
+          } else {
+            saveOverlaySuccess(ov, 'Factura "'+val+'" asignada a '+ids.length+" pedido(s)");
+            setTimeout(function(){ ov.remove(); }, 700);
+          }
+          loadPedidos().then(function(){ renderGroupDetalle(); });
+          return;
+        }
+        var rowId = pendientes.shift();
+        awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: rowId, data: { numero_factura: val, updated_at: new Date().toISOString() } })
+          .then(siguiente)
+          .catch(function(err){ console.error(err); fallidos.push(rowId); siguiente(); });
+      }
+      siguiente();
     });
   }
 
@@ -2337,7 +2394,18 @@
       html += '</div>';
     }
     $("groupBody").innerHTML = html;
-    $("aBuscar").addEventListener("input", function(){ asignarSearchTerm = this.value; renderAsignarView(); this.focus(); this.setSelectionRange(this.value.length, this.value.length); });
+    $("aBuscar").addEventListener("input", function(){
+      // OJO: renderAsignarView() reconstruye todo el innerHTML de groupBody, así que el nodo
+      // <input> original ("this") queda desconectado del DOM. Enfocar "this" no hacía nada,
+      // por eso el cursor se salía del campo en cada letra. Hay que volver a buscar el input
+      // NUEVO por su id después de re-renderizar, y enfocar ese.
+      var pos = this.selectionStart;
+      asignarSearchTerm = this.value;
+      renderAsignarView();
+      var nuevo = $("aBuscar");
+      nuevo.focus();
+      nuevo.setSelectionRange(pos, pos);
+    });
     document.querySelectorAll(".aPedidoChk").forEach(function(c){
       c.addEventListener("change", function(){
         if(c.checked) asignarSelectedIds[c.dataset.id] = true;
@@ -2369,6 +2437,42 @@
   $("groupCancelBtn").addEventListener("click", function(){ $("groupModal").classList.add("hidden"); });
   $("groupCancelBtn2").addEventListener("click", function(){ $("groupModal").classList.add("hidden"); });
   // Igual que los otros modales, no se cierra al hacer clic afuera.
+
+  // "Eliminar grupo": no borra los pedidos, solo les quita la marca de grupo múltiple
+  // (por si se seleccionó algo mal al crearlos o asignarlos).
+  $("groupDeleteBtn").addEventListener("click", function(){
+    var grupos = gruposMultiples();
+    var sel = $("gGrupoSelect");
+    var grupo = sel ? grupos.find(function(g){ return g.id === sel.value; }) : null;
+    if(!grupo){ showToast("No hay grupo seleccionado", true); return; }
+    if(!confirm('¿Eliminar el grupo "'+(grupo.proveedor||"—")+'" ('+grupo.items.length+' pedido(s))?\n\nLos pedidos NO se borran, solo dejan de estar agrupados como "múltiple".')) return;
+    if(!aw){ showToast("No hay conexión a Appwrite configurada", true); return; }
+    var ids = grupo.items.map(function(p){ return p.id; });
+    var btn = this;
+    btn.disabled = true;
+    var ov = showSaveOverlay("Eliminando grupo ("+ids.length+" pedido(s))…", "Sincronizando con Appwrite");
+    var pendientes = ids.slice();
+    var fallidos = [];
+    function siguiente(){
+      if(!pendientes.length){
+        btn.disabled = false;
+        if(fallidos.length){
+          saveOverlayError(ov, fallidos.length+" pedido(s) no se pudieron desagrupar");
+          setTimeout(function(){ ov.remove(); }, 2400);
+        } else {
+          saveOverlaySuccess(ov, "Grupo eliminado");
+          setTimeout(function(){ ov.remove(); }, 700);
+        }
+        loadPedidos().then(function(){ renderGroupModal(); });
+        return;
+      }
+      var rowId = pendientes.shift();
+      awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: rowId, data: { grupo_multiple: null, updated_at: new Date().toISOString() } })
+        .then(siguiente)
+        .catch(function(err){ console.error(err); fallidos.push(rowId); siguiente(); });
+    }
+    siguiente();
+  });
 
   $("groupAsignarBtn").addEventListener("click", function(){
     var ids = Object.keys(asignarSelectedIds);
