@@ -396,6 +396,7 @@
       <button class="btn-secondary" id="notifBtn">🔔 Notificaciones <span id="notifCount" class="hidden" style="background:var(--red);color:#fff;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px;">0</span></button>
       <button class="btn-secondary" id="settingsBtn">⚙ Umbral: <span id="umbralLabel">20</span>d</button>
       <button class="btn-secondary" id="consolidateBtn">🧾 Consolidar despacho</button>
+      <button class="btn-secondary" id="groupBtn">👥 Grupo múltiple</button>
       <button class="btn-primary" id="addBtn">＋ Agregar pedido</button>
     </div>
   </div>
@@ -445,6 +446,20 @@
     <div class="modal-body" id="formBody"></div>
     <div class="modal-foot">
       <button class="btn-primary" id="formSaveBtn" style="flex:1;">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="groupModal">
+  <div class="modal-box" style="max-width:760px;">
+    <div class="modal-head">
+      <div class="modal-title">👥 Grupo múltiple<small>Aplica los mismos datos de trámite a todos los pedidos creados juntos desde un mismo correo</small></div>
+      <button class="modal-close" id="groupClose">✕</button>
+    </div>
+    <div class="modal-body" id="groupBody"></div>
+    <div class="modal-foot">
+      <button class="icon-btn" id="groupCancelBtn" style="flex:1;justify-content:center;">Cancelar</button>
+      <button class="btn-primary" id="groupApplyBtn" style="flex:2;">Aplicar al grupo seleccionado</button>
     </div>
   </div>
 </div>
@@ -1488,7 +1503,7 @@
         '<div class="ped-main">'+
           '<div class="ped-title" title="'+esc(p.proveedor||'')+'"><span class="tipo-badge '+tipoCls+'">'+tipoLbl+'</span>'+(esFuturo?' <span class="tipo-badge badge-future" style="background:none;">Futuro</span>':'')+' '+esc(truncateProveedor(p.proveedor))+'</div>'+
           '<div class="ped-sub">'+(p.departamento?'<b>'+esc(p.departamento)+'</b> · ':'')+'Bultos '+(p.bultos_inicial!=null?esc(p.bultos_inicial):'—')+'/'+(p.bultos_final!=null?esc(p.bultos_final):'—')+(p.comprador?' · '+esc(p.comprador):'')+'</div>'+
-          '<div class="ped-sub2">'+(p.numero_pedido?'Ped. '+esc(p.numero_pedido):'')+(p.numero_factura?' · Fact. '+esc(p.numero_factura):'')+(monto?' · '+fmtUSD(monto):'')+(fechaPedidoStr?' · ('+fmtDate(fechaPedidoStr)+')':'')+'</div>'+
+          '<div class="ped-sub2">'+(p.numero_pedido?'Ped. '+esc(p.numero_pedido):'')+(p.numero_factura?' · Fact. '+esc(p.numero_factura):'')+(monto?' · '+fmtUSD(monto):'')+(fechaPedidoStr?' · ('+fmtDate(fechaPedidoStr)+')':'')+(p.grupo_multiple?' · 👥 Múltiple':'')+'</div>'+
         '</div>'+
         '<div class="ped-status"><span class="badge '+badgeCls+'">'+(warn?'⚠ ':'')+badgeLbl+'</span></div>'+
         '<div class="ped-days'+(warn?' warn':'')+'">'+(d!=null?d:'—')+'<small>días</small>'+futuroCountHtml+'</div>'+
@@ -1824,6 +1839,23 @@
     html += '<div class="field-row"><label>Proveedor / Compañía *</label><input id="f_proveedor" list="prov-datalist" value="'+esc(p.proveedor||'')+'" placeholder="Nombre del proveedor en Zona Libre"></div>';
     html += '<div class="field-row"><label>Departamento</label><input id="f_departamento" list="depto-datalist" value="'+esc(p.departamento||'')+'" placeholder="Ej: CABALLEROS, DAMAS-NEW…"></div>';
 
+    // Pedido múltiple: solo al agregar (no al editar) — permite crear de una vez varios pedidos del
+    // mismo proveedor/correo, cada uno con su propio N° de pedido y monto, compartiendo el resto de
+    // los datos (fecha del pedido, comprador, categoría, fechas de trámite, etc.)
+    if(!id){
+      html += '<div class="field-row"><label>Tipo de pedido</label>'+
+        '<div style="display:flex;gap:8px;">'+
+          '<button type="button" id="tipoNormalBtn" class="icon-btn" style="flex:1;justify-content:center;">Normal</button>'+
+          '<button type="button" id="tipoMultipleBtn" class="icon-btn" style="flex:1;justify-content:center;">Múltiple (varios pedidos del mismo correo)</button>'+
+        '</div></div>';
+      html += '<div id="multipleZone" style="display:none;">'+
+        '<div class="modal-section-title">Pedidos incluidos <span class="muted" style="font-weight:400;font-size:11px;">(mismo proveedor — cada uno con su propio N° de pedido y monto; el resto de los campos de este formulario se aplica a los '+
+          'a todos por igual)</span></div>'+
+        '<div class="field-row"><label>Cantidad de pedidos</label><input type="number" min="2" max="20" step="1" id="mCantidad" value="2"></div>'+
+        '<div id="mRows"></div>'+
+      '</div>';
+    }
+
     // Comprador | Descripción / referencia
     html += '<div class="field-grid">'+
       '<div class="field-row"><label>Comprador</label><select id="f_comprador"><option value="">— Seleccione —</option>'+
@@ -1898,6 +1930,42 @@
 
     $("formBody").innerHTML = html;
     $("formModal").classList.remove("hidden");
+    $("formBody").dataset.modo = "normal";
+
+    // ---------- modo "pedido múltiple" (solo al agregar) ----------
+    var tipoNormalBtn = $("tipoNormalBtn"), tipoMultipleBtn = $("tipoMultipleBtn");
+    if(tipoNormalBtn && tipoMultipleBtn){
+      function setModoMultiple(on){
+        $("formBody").dataset.modo = on ? "multiple" : "normal";
+        tipoNormalBtn.style.background   = on ? "" : "var(--teal)";
+        tipoNormalBtn.style.color        = on ? "" : "#04211c";
+        tipoMultipleBtn.style.background = on ? "var(--teal)" : "";
+        tipoMultipleBtn.style.color      = on ? "#04211c" : "";
+        $("multipleZone").style.display = on ? "block" : "none";
+        var fNumeroRow = $("f_numero") ? $("f_numero").closest(".field-row") : null;
+        var fMontoRow  = $("f_monto_pedido") ? $("f_monto_pedido").closest(".field-row") : null;
+        if(fNumeroRow) fNumeroRow.style.display = on ? "none" : "";
+        if(fMontoRow)  fMontoRow.style.display  = on ? "none" : "";
+        if(on) renderMRows();
+      }
+      function renderMRows(){
+        var prevN = Array.prototype.map.call(document.querySelectorAll(".mRowNumero"), function(el){ return el.value; });
+        var prevM = Array.prototype.map.call(document.querySelectorAll(".mRowMonto"), function(el){ return el.value; });
+        var n = Math.max(2, Math.min(20, parseInt($("mCantidad").value,10)||2));
+        var rowsHtml = '';
+        for(var i=0;i<n;i++){
+          rowsHtml += '<div class="field-grid">'+
+            '<div class="field-row"><label># Pedido / Proforma '+(i+1)+'</label><input class="mRowNumero" value="'+esc(prevN[i]||'')+'" placeholder="N° pedido '+(i+1)+'"></div>'+
+            '<div class="field-row"><label>Monto pedido (USD) '+(i+1)+'</label><input type="number" step="0.01" class="mRowMonto" value="'+esc(prevM[i]||'')+'" placeholder="0.00"></div>'+
+          '</div>';
+        }
+        $("mRows").innerHTML = rowsHtml;
+      }
+      tipoNormalBtn.addEventListener("click", function(){ setModoMultiple(false); });
+      tipoMultipleBtn.addEventListener("click", function(){ setModoMultiple(true); });
+      $("mCantidad").addEventListener("input", renderMRows);
+      setModoMultiple(false);
+    }
 
     bindReorderZoneToggles();
     $("f_tipo_embarque").addEventListener("change", applyHomologVisibility);
@@ -2126,6 +2194,152 @@
   // Nota: el modal de formulario (Agregar/Editar pedido) ya NO se cierra al hacer clic afuera — solo con
   // el botón de cerrar. Esto evita que se cierre por accidente al seleccionar/copiar texto de un campo.
 
+  // ---------- grupo múltiple ----------
+  // Cuando se crean varios pedidos de golpe con "Tipo de pedido: Múltiple", todos comparten un
+  // "grupo_multiple" (id interno). Esta pantalla permite elegir ese grupo y aplicarle de una sola vez
+  // datos de trámite de etapas tempranas (aprobación, documentación, factura, OC) además de los de
+  // despacho Sababa — sin mezclar con pedidos que no pertenecen a ningún grupo múltiple.
+  var GROUP_FIELDS = [
+    { key:"fecha_aprobacion",             label:"Fecha de aprobación del comprador",         type:"date" },
+    { key:"fecha_aprobacion_gerente",     label:"Fecha de aprobación de gerencia",            type:"date" },
+    { key:"fecha_envio_documentacion",    label:"Fecha de documento solicitado al proveedor", type:"date" },
+    { key:"fecha_factura",                label:"Fecha de factura y traspaso recibidos",      type:"date" },
+    { key:"numero_factura",               label:"N° de factura",                              type:"text" },
+    { key:"fecha_envio_factura_comprador",label:"Fecha de factura enviada al comprador",      type:"date" },
+    { key:"fecha_orden_compra",           label:"Fecha de orden de compra entregada",         type:"date" },
+    { key:"numero_oc_madre",              label:"N° de OC madre",                             type:"text" },
+    { key:"fecha_recepcion_bodega",       label:"Fecha de recepción en bodega Sababa",        type:"date" },
+    { key:"fecha_envio_sabada",           label:"Instrucciones enviadas al tramitador (fecha)", type:"date" },
+    { key:"fecha_despacho_sabada",        label:"Fecha de despacho Sababa",                   type:"date" },
+    { key:"numero_factura_fiscal_sababa", label:"N° de factura fiscal Sababa",                type:"text" },
+    { key:"fecha_factura_fiscal_sababa",  label:"Fecha de factura fiscal Sababa",             type:"date" },
+    { key:"fecha_recepcion_final",        label:"Fecha de recepción final (CDF)",             type:"date" },
+    { key:"numero_embarque",              label:"N° de embarque",                             type:"text" }
+  ];
+
+  function gruposMultiples(){
+    var porGrupo = {};
+    state.pedidos.forEach(function(p){
+      if(!p.grupo_multiple) return;
+      if(!porGrupo[p.grupo_multiple]) porGrupo[p.grupo_multiple] = [];
+      porGrupo[p.grupo_multiple].push(p);
+    });
+    return Object.keys(porGrupo).map(function(gid){
+      var items = porGrupo[gid];
+      return { id: gid, items: items, proveedor: items[0].proveedor, fecha: items[0].fecha_pedido };
+    }).sort(function(a,b){ return (b.fecha||"").localeCompare(a.fecha||""); });
+  }
+
+  var groupSelectedIds = null;
+
+  function renderGroupModal(){
+    var grupos = gruposMultiples();
+    var html = '';
+    if(!grupos.length){
+      html += '<div class="empty-state">Todavía no hay pedidos creados como "múltiple". Usa "＋ Agregar pedido" → "Múltiple" para crear varios pedidos del mismo correo de una sola vez.</div>';
+      $("groupBody").innerHTML = html;
+      return;
+    }
+    html += '<div class="field-row"><label>Grupo</label><select id="gGrupoSelect" class="icon-btn" style="cursor:pointer;width:100%;">'+
+      grupos.map(function(g,i){
+        return '<option value="'+esc(g.id)+'">'+esc(g.proveedor||"—")+' — '+g.items.length+' pedidos'+(g.fecha?' · '+fmtDate(g.fecha):'')+'</option>';
+      }).join("")+
+    '</select></div>';
+    html += '<div id="gGrupoDetalle"></div>';
+    $("groupBody").innerHTML = html;
+    $("gGrupoSelect").addEventListener("change", renderGroupDetalle);
+    renderGroupDetalle();
+  }
+
+  function renderGroupDetalle(){
+    var grupos = gruposMultiples();
+    var gid = $("gGrupoSelect").value;
+    var grupo = grupos.find(function(g){ return g.id === gid; });
+    groupSelectedIds = new Set(grupo ? grupo.items.map(function(p){ return p.id; }) : []);
+
+    var html = '';
+    html += '<div class="modal-section-title">Pedidos de este grupo</div>';
+    html += '<div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin-bottom:14px;">';
+    (grupo ? grupo.items : []).forEach(function(p){
+      html += '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;">'+
+        '<input type="checkbox" class="gPedidoChk" data-id="'+p.id+'" checked style="width:auto;flex:none;">'+
+        '<span style="flex:1;">'+esc(p.proveedor||"—")+(p.numero_pedido?' <span class="muted">#'+esc(p.numero_pedido)+'</span>':'')+'</span>'+
+        '<span class="muted" style="font-size:11.5px;">'+esc(estadoPedido(p).label)+'</span>'+
+        '<span class="muted" style="font-size:11.5px;">'+(p.monto_pedido!=null?fmtUSD(p.monto_pedido):'')+'</span>'+
+      '</label>';
+    });
+    html += '</div>';
+
+    html += '<div class="modal-section-title">Datos a aplicar a todo el grupo</div>';
+    html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">Completa solo los campos que quieras aplicar — los que dejes en blanco no modifican nada.</div>';
+    html += '<div class="field-grid">';
+    GROUP_FIELDS.forEach(function(f){
+      html += '<div class="field-row"><label>'+esc(f.label)+'</label><input type="'+f.type+'" id="gf_'+f.key+'"></div>';
+    });
+    html += '</div>';
+
+    $("gGrupoDetalle").innerHTML = html;
+    document.querySelectorAll(".gPedidoChk").forEach(function(c){
+      c.addEventListener("change", function(){
+        if(c.checked) groupSelectedIds.add(c.dataset.id);
+        else groupSelectedIds.delete(c.dataset.id);
+      });
+    });
+  }
+
+  function openGroupModal(){
+    renderGroupModal();
+    $("groupModal").classList.remove("hidden");
+  }
+  $("groupBtn").addEventListener("click", openGroupModal);
+  $("groupClose").addEventListener("click", function(){ $("groupModal").classList.add("hidden"); });
+  $("groupCancelBtn").addEventListener("click", function(){ $("groupModal").classList.add("hidden"); });
+  // Igual que los otros modales, no se cierra al hacer clic afuera.
+
+  $("groupApplyBtn").addEventListener("click", function(){
+    var ids = Array.from(groupSelectedIds || []);
+    if(!ids.length){ showToast("No hay pedidos seleccionados en este grupo", true); return; }
+
+    var patch = {};
+    GROUP_FIELDS.forEach(function(f){
+      var el = $("gf_"+f.key);
+      var v = el ? el.value.trim() : "";
+      if(v) patch[f.key] = v;
+    });
+    if(!Object.keys(patch).length){ showToast("Completa al menos un campo para aplicar", true); return; }
+    patch.updated_at = new Date().toISOString();
+
+    if(!aw){ showToast("No hay conexión a Appwrite configurada", true); return; }
+    var applyBtn = this;
+    applyBtn.disabled = true;
+    var ov = showSaveOverlay("Actualizando "+ids.length+" pedido(s) del grupo…", "Sincronizando con Appwrite");
+
+    var pendientes = ids.slice();
+    var fallidos = [];
+    function siguiente(){
+      if(!pendientes.length){
+        applyBtn.disabled = false;
+        if(fallidos.length){
+          saveOverlayError(ov, fallidos.length+" pedido(s) no se pudieron actualizar");
+          setTimeout(function(){ ov.remove(); }, 2400);
+        } else {
+          saveOverlaySuccess(ov, "Grupo actualizado ("+ids.length+" pedido(s))");
+          setTimeout(function(){
+            ov.remove();
+            $("groupModal").classList.add("hidden");
+            loadPedidos();
+          }, 700);
+        }
+        return;
+      }
+      var rowId = pendientes.shift();
+      awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: rowId, data: patch })
+        .then(siguiente)
+        .catch(function(err){ console.error(err); fallidos.push(rowId); siguiente(); });
+    }
+    siguiente();
+  });
+
   $("personalizeClose").addEventListener("click", function(){ $("personalizeModal").classList.add("hidden"); });
   $("personalizeModal").addEventListener("click", function(e){ if(e.target===$("personalizeModal")) $("personalizeModal").classList.add("hidden"); });
   $("personalizeResetBtn").addEventListener("click", function(){
@@ -2168,6 +2382,7 @@
   }
 
   $("formSaveBtn").addEventListener("click", function(){
+    var esMultiple = $("formBody").dataset.modo === "multiple" && !state.editingId;
     var proveedor = $("f_proveedor").value.trim();
     var fechaPedido = $("f_fecha_pedido").value;
     if(!proveedor || !fechaPedido){
@@ -2178,14 +2393,31 @@
       if(!confirm("No registraste la 'Fecha de pedido' (factura del proveedor). Es opcional, pero se usa para cuentas por pagar y alertas de crédito.\n\n¿Deseas guardar el pedido de todos modos, sin esa fecha?")) return;
     }
     var esCreditoChk = $("f_credito").checked;
-    if($("f_numero_factura").value.trim() && !$("f_bultos_final").value){
+    if(!esMultiple && $("f_numero_factura").value.trim() && !$("f_bultos_final").value){
       showToast("Bultos final es obligatorio al registrar la factura (cierre del pedido)", true);
       return;
     }
     if(!aw){ showToast("No hay conexión a Appwrite configurada", true); return; }
+
+    var filasMultiple = [];
+    if(esMultiple){
+      var numeros = document.querySelectorAll(".mRowNumero");
+      var montos  = document.querySelectorAll(".mRowMonto");
+      for(var i=0;i<numeros.length;i++){
+        var nro = numeros[i].value.trim();
+        var mto = montos[i].value;
+        if(!nro && !mto) continue; // fila vacía, se ignora
+        filasMultiple.push({ numero_pedido: nro || null, monto_pedido: mto===""?null:parseFloat(mto) });
+      }
+      if(filasMultiple.length < 2){
+        showToast("Completa el N° de pedido y/o monto de al menos 2 pedidos para crear un grupo múltiple", true);
+        return;
+      }
+    }
+
     var saveBtn = this;
     saveBtn.disabled = true;
-    var ov = showSaveOverlay();
+    var ov = showSaveOverlay(esMultiple ? "Creando "+filasMultiple.length+" pedidos…" : undefined);
     function num(id){ var v = $(id).value; return v===""?null:parseFloat(v); }
     var payload = {
       proveedor: proveedor,
@@ -2238,6 +2470,42 @@
       notas: $("f_notas").value.trim() || null,
       updated_at: new Date().toISOString()
     };
+
+    if(esMultiple){
+      var grupoId = aw.ID.unique();
+      var pendientesM = filasMultiple.slice();
+      var fallidosM = [];
+      function siguienteM(){
+        if(!pendientesM.length){
+          saveBtn.disabled = false;
+          if(fallidosM.length){
+            saveOverlayError(ov, fallidosM.length+" pedido(s) del grupo no se pudieron crear");
+            setTimeout(function(){ ov.remove(); }, 2400);
+          } else {
+            clearDraft(null);
+            saveOverlaySuccess(ov, "Grupo de "+filasMultiple.length+" pedidos creado");
+            setTimeout(function(){
+              ov.remove();
+              $("formModal").classList.add("hidden");
+              loadPedidos();
+            }, 700);
+          }
+          return;
+        }
+        var fila = pendientesM.shift();
+        var rowPayload = {};
+        for(var k in payload){ rowPayload[k] = payload[k]; }
+        rowPayload.numero_pedido = fila.numero_pedido;
+        rowPayload.monto_pedido = fila.monto_pedido;
+        rowPayload.grupo_multiple = grupoId;
+        awDb.createRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: aw.ID.unique(), data: rowPayload })
+          .then(siguienteM)
+          .catch(function(err){ console.error(err); fallidosM.push(fila); siguienteM(); });
+      }
+      siguienteM();
+      return;
+    }
+
     var req = state.editingId
       ? awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: state.editingId, data: payload })
       : awDb.createRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: aw.ID.unique(), data: payload });
