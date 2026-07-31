@@ -85,6 +85,8 @@
     cursor:pointer; display:flex; align-items:center; gap:6px;
   }
   .icon-btn:hover{ color:var(--teal); border-color:var(--teal); }
+  .voice-btn{ padding:0 12px; font-size:14px; }
+  .voice-btn:disabled{ opacity:.6; cursor:wait; }
 
   header{padding:6px 0 22px;position:relative;}
   .eyebrow{
@@ -701,26 +703,26 @@
         return '<div class="field-row"><label>🗓️ Fecha de pedido <span class="muted" style="font-weight:400;">(opcional — fecha real del pedido/factura, según el correo del proveedor)</span></label><input type="date" id="f_fecha_pedido_real" value="'+(p.fecha_pedido_real||'')+'"></div>';
       } },
     { id:"fecha_pedido", icon:"📝", label:"Pedido enviado", row:function(p){
-        return '<div class="field-row"><label>📝 Pedido enviado * <span class="muted" style="font-weight:400;">(fecha y hora en que se registra en el sistema)</span> <span id="fechaPedidoConfToggle" style="cursor:pointer;color:var(--teal);font-weight:600;font-size:11.5px;">'+(p.fecha_pedido_confirmacion?'':'(+ 2da fecha)')+'</span></label><input type="datetime-local" id="f_fecha_pedido" value="'+(p.fecha_pedido||'')+'"></div>';
+        return '<div class="field-row"><label>📝 Pedido enviado * <span class="muted" style="font-weight:400;">(fecha y hora en que se registra en el sistema)</span> <span id="fechaPedidoConfToggle" style="cursor:pointer;color:var(--teal);font-weight:600;font-size:11.5px;">'+(p.fecha_pedido_confirmacion?'':'(+ 2da fecha)')+'</span></label><input type="datetime-local" lang="en-GB" id="f_fecha_pedido" value="'+(p.fecha_pedido||'')+'"></div>';
       }, extra:function(p){
-        return '<div class="field-row" id="fechaPedidoConfRow" style="'+(p.fecha_pedido_confirmacion?'':'display:none;')+'"><label>Reenvío / segunda confirmación del pedido <span class="muted" style="font-weight:400;">(opcional — fecha y hora)</span></label><input type="datetime-local" id="f_fecha_pedido_confirmacion" value="'+(p.fecha_pedido_confirmacion||'')+'"></div>';
+        return '<div class="field-row" id="fechaPedidoConfRow" style="'+(p.fecha_pedido_confirmacion?'':'display:none;')+'"><label>Reenvío / segunda confirmación del pedido <span class="muted" style="font-weight:400;">(opcional — fecha y hora)</span></label><input type="datetime-local" lang="en-GB" id="f_fecha_pedido_confirmacion" value="'+(p.fecha_pedido_confirmacion||'')+'"></div>';
       } },
     { id:"fecha_aprobacion", icon:"✅", label:"Aprobación del comprador", row:function(p){
-        return '<div class="field-row"><label>✅ Aprobación del comprador <span class="muted" style="font-weight:400;">(fecha y hora)</span> <span id="motivoAprobToggle" style="cursor:pointer;color:var(--teal);font-weight:600;font-size:11.5px;">'+(p.motivo_aprobacion?'':'(+ nota)')+'</span> <span id="fechaAprobConfToggle" style="cursor:pointer;color:var(--teal);font-weight:600;font-size:11.5px;">'+(p.fecha_aprobacion_confirmacion?'':'(+ 2da fecha)')+'</span></label><input type="datetime-local" id="f_fecha_aprobacion" value="'+(p.fecha_aprobacion||'')+'"></div>';
+        return '<div class="field-row"><label>✅ Aprobación del comprador <span class="muted" style="font-weight:400;">(fecha y hora)</span> <span id="motivoAprobToggle" style="cursor:pointer;color:var(--teal);font-weight:600;font-size:11.5px;">'+(p.motivo_aprobacion?'':'(+ nota)')+'</span> <span id="fechaAprobConfToggle" style="cursor:pointer;color:var(--teal);font-weight:600;font-size:11.5px;">'+(p.fecha_aprobacion_confirmacion?'':'(+ 2da fecha)')+'</span></label><input type="datetime-local" lang="en-GB" id="f_fecha_aprobacion" value="'+(p.fecha_aprobacion||'')+'"></div>';
       }, extra:function(p){
         return '<div class="field-row" id="motivoAprobRow" style="'+(p.motivo_aprobacion?'':'display:none;')+'"><label>Motivo de demora en aprobación (opcional)</label><input id="f_motivo_aprobacion" value="'+esc(p.motivo_aprobacion||'')+'" placeholder="Ej: cambio de precio no acordado"></div>'+
-          '<div class="field-row" id="fechaAprobConfRow" style="'+(p.fecha_aprobacion_confirmacion?'':'display:none;')+'"><label>Segunda aprobación / reconfirmación <span class="muted" style="font-weight:400;">(opcional — fecha y hora)</span></label><input type="datetime-local" id="f_fecha_aprobacion_confirmacion" value="'+(p.fecha_aprobacion_confirmacion||'')+'"></div>';
+          '<div class="field-row" id="fechaAprobConfRow" style="'+(p.fecha_aprobacion_confirmacion?'':'display:none;')+'"><label>Segunda aprobación / reconfirmación <span class="muted" style="font-weight:400;">(opcional — fecha y hora)</span></label><input type="datetime-local" lang="en-GB" id="f_fecha_aprobacion_confirmacion" value="'+(p.fecha_aprobacion_confirmacion||'')+'"></div>';
       } },
     { id:"fecha_aprobacion_gerente", icon:"🧑‍💼", label:"Aprobación gerente de compras", row:function(p){
         return '<div class="field-row"><label>🧑‍💼 Aprobación gerente de compras</label><input type="date" id="f_fecha_aprobacion_gerente" value="'+(p.fecha_aprobacion_gerente||'')+'"></div>';
       } },
     { id:"fecha_envio_documentacion", icon:"📤", label:"Documento solicitado al proveedor", row:function(p){
-        return '<div class="field-row"><label>📤 Documento solicitado al proveedor <span class="muted" style="font-weight:400;">(fecha y hora)</span> <span id="fechaEnvioDocConfToggle" style="cursor:pointer;color:var(--teal);font-weight:600;font-size:11.5px;">'+(p.fecha_envio_doc_confirmacion?'':'(+ 2da fecha)')+'</span></label><input type="datetime-local" id="f_fecha_envio_documentacion" value="'+(p.fecha_envio_documentacion||'')+'"></div>';
+        return '<div class="field-row"><label>📤 Documento solicitado al proveedor <span class="muted" style="font-weight:400;">(fecha y hora)</span> <span id="fechaEnvioDocConfToggle" style="cursor:pointer;color:var(--teal);font-weight:600;font-size:11.5px;">'+(p.fecha_envio_doc_confirmacion?'':'(+ 2da fecha)')+'</span></label><input type="datetime-local" lang="en-GB" id="f_fecha_envio_documentacion" value="'+(p.fecha_envio_documentacion||'')+'"></div>';
       }, extra:function(p){
-        return '<div class="field-row" id="fechaEnvioDocConfRow" style="'+(p.fecha_envio_doc_confirmacion?'':'display:none;')+'"><label>Documento reenviado / segunda solicitud <span class="muted" style="font-weight:400;">(opcional — fecha y hora)</span></label><input type="datetime-local" id="f_fecha_envio_doc_confirmacion" value="'+(p.fecha_envio_doc_confirmacion||'')+'"></div>';
+        return '<div class="field-row" id="fechaEnvioDocConfRow" style="'+(p.fecha_envio_doc_confirmacion?'':'display:none;')+'"><label>Documento reenviado / segunda solicitud <span class="muted" style="font-weight:400;">(opcional — fecha y hora)</span></label><input type="datetime-local" lang="en-GB" id="f_fecha_envio_doc_confirmacion" value="'+(p.fecha_envio_doc_confirmacion||'')+'"></div>';
       } },
     { id:"fecha_factura", icon:"🧾", label:"Factura y traspaso recibidos", row:function(p){
-        return '<div class="field-row"><label>🧾 Factura y traspaso recibidos <span class="muted" style="font-weight:400;">(fecha y hora)</span></label><input type="datetime-local" id="f_fecha_factura" value="'+(p.fecha_factura||'')+'"></div>';
+        return '<div class="field-row"><label>🧾 Factura y traspaso recibidos <span class="muted" style="font-weight:400;">(fecha y hora)</span></label><input type="datetime-local" lang="en-GB" id="f_fecha_factura" value="'+(p.fecha_factura||'')+'"></div>';
       } },
     { id:"fecha_recepcion_bodega", icon:"🏭", label:"Recibido en bodega Sababa", row:function(p){
         return '<div class="field-row"><label>🏭 Recibido en bodega Sababa <span id="notaBodegaToggle" style="cursor:pointer;color:var(--teal);font-weight:600;font-size:11.5px;">'+(p.nota_recepcion_bodega?'':'(+ nota)')+'</span></label><input type="date" id="f_fecha_recepcion_bodega" value="'+(p.fecha_recepcion_bodega||'')+'"></div>';
@@ -728,10 +730,10 @@
         return '<div class="field-row" id="notaBodegaRow" style="'+(p.nota_recepcion_bodega?'':'display:none;')+'"><label>Nota (opcional)</label><input id="f_nota_recepcion_bodega" value="'+esc(p.nota_recepcion_bodega||'')+'" placeholder="Ej: recibido hoy en Sababa"></div>';
       } },
     { id:"fecha_envio_factura_comprador", icon:"📨", label:"Factura enviada al comprador (solicitud OC)", row:function(p){
-        return '<div class="field-row"><label>📨 Factura enviada al comprador (solicitud de OC) <span class="muted" style="font-weight:400;">(fecha y hora)</span></label><input type="datetime-local" id="f_fecha_envio_factura_comprador" value="'+(p.fecha_envio_factura_comprador||'')+'"></div>';
+        return '<div class="field-row"><label>📨 Factura enviada al comprador (solicitud de OC) <span class="muted" style="font-weight:400;">(fecha y hora)</span></label><input type="datetime-local" lang="en-GB" id="f_fecha_envio_factura_comprador" value="'+(p.fecha_envio_factura_comprador||'')+'"></div>';
       } },
     { id:"fecha_orden_compra", icon:"📄", label:"Orden de compra entregada", row:function(p){
-        return '<div class="field-row"><label>📄 Orden de compra entregada <span class="muted" style="font-weight:400;">(fecha y hora)</span></label><input type="datetime-local" id="f_fecha_orden_compra" value="'+(p.fecha_orden_compra||'')+'"></div>';
+        return '<div class="field-row"><label>📄 Orden de compra entregada <span class="muted" style="font-weight:400;">(fecha y hora)</span></label><input type="datetime-local" lang="en-GB" id="f_fecha_orden_compra" value="'+(p.fecha_orden_compra||'')+'"></div>';
       } },
     { id:"numero_oc_madre", icon:"🧮", label:"N° orden de compra madre", group:"homolog", row:function(p){
         return '<div class="field-row"><label>N° orden de compra madre</label><input id="f_numero_oc_madre" value="'+esc(p.numero_oc_madre||'')+'"></div>';
@@ -748,7 +750,7 @@
         return '<div class="field-row"><label>Costo landed (USD)</label><input type="number" step="0.01" id="f_costo_landed" value="'+(p.costo_landed!=null?p.costo_landed:'')+'"></div>';
       } },
     { id:"fecha_envio_sabada", icon:"🚚", label:"Instrucciones enviadas al tramitador (carga a CDF)", row:function(p){
-        return '<div class="field-row"><label>🚚 Instrucciones enviadas al tramitador (carga a CDF) <span class="muted" style="font-weight:400;">(fecha y hora)</span></label><input type="datetime-local" id="f_fecha_envio_sabada" value="'+(p.fecha_envio_sabada||'')+'"></div>';
+        return '<div class="field-row"><label>🚚 Instrucciones enviadas al tramitador (carga a CDF) <span class="muted" style="font-weight:400;">(fecha y hora)</span></label><input type="datetime-local" lang="en-GB" id="f_fecha_envio_sabada" value="'+(p.fecha_envio_sabada||'')+'"></div>';
       } },
     { id:"fecha_despacho_sabada", icon:"🚛", label:"Fecha de despacho (Sababa)", row:function(p){
         return '<div class="field-row"><label>🚛 Fecha de despacho (Sababa)</label><input type="date" id="f_fecha_despacho_sabada" value="'+(p.fecha_despacho_sabada||'')+'"></div>';
@@ -2214,13 +2216,14 @@
   // como solo-fecha ("date"), el valor queda en un formato que el input datetime-local del
   // formulario individual no puede mostrar, y el campo aparece vacío aunque sí se haya guardado.
   var GROUP_FIELDS = [
+    { key:"fecha_pedido",                 label:"Pedido enviado (fecha y hora en sistema)",     type:"datetime-local" },
+    { key:"fecha_pedido_real",            label:"Fecha de pedido (según correo del proveedor)", type:"date" },
     { key:"fecha_aprobacion",             label:"Fecha de aprobación del comprador",         type:"datetime-local" },
     { key:"fecha_aprobacion_gerente",     label:"Fecha de aprobación de gerencia",            type:"date" },
     { key:"fecha_envio_documentacion",    label:"Fecha de documento solicitado al proveedor", type:"datetime-local" },
     { key:"fecha_factura",                label:"Fecha de factura y traspaso recibidos",      type:"datetime-local" },
     { key:"fecha_envio_factura_comprador",label:"Fecha de factura enviada al comprador",      type:"datetime-local" },
     { key:"fecha_orden_compra",           label:"Fecha de orden de compra entregada",         type:"datetime-local" },
-    { key:"numero_oc_madre",              label:"N° de OC madre",                             type:"text" },
     { key:"fecha_recepcion_bodega",       label:"Fecha de recepción en bodega Sababa",        type:"date" },
     { key:"fecha_envio_sabada",           label:"Instrucciones enviadas al tramitador (fecha)", type:"datetime-local" },
     { key:"fecha_despacho_sabada",        label:"Fecha de despacho Sababa",                   type:"date" },
@@ -2229,9 +2232,10 @@
     { key:"fecha_recepcion_final",        label:"Fecha de recepción final (CDF)",             type:"date" },
     { key:"numero_embarque",              label:"N° de embarque",                             type:"text" }
   ];
-  // "N° de factura" se quitó de arriba a propósito: cada pedido de un mismo grupo casi siempre
-  // tiene su propia factura distinta, así que se maneja con su propio widget de asignación
-  // individual más abajo (ver "Asignar N° de factura por pedido").
+  // "N° de factura" y "N° de OC madre" NO están arriba a propósito: dentro de un mismo grupo
+  // múltiple, cada pedido casi siempre trae su propia factura y su propia OC (aunque hayan
+  // llegado juntos en un mismo correo del proveedor). Esos dos se manejan con su propio widget
+  // de "asignación por pedido" más abajo, en vez de aplicarse igual a todo el grupo.
 
   function gruposMultiples(){
     var porGrupo = {};
@@ -2248,6 +2252,175 @@
 
   var groupSelectedIds = null;
 
+  // Campos que se guardan uno-por-pedido (no aplican igual a todo el grupo) — ver comentario
+  // arriba de GROUP_FIELDS. Un solo widget genérico atiende a ambos (y a cualquier otro que se
+  // agregue después) para no duplicar la lógica de "escribir → marcar pedidos → asignar".
+  var ASIGNACION_INDIVIDUAL_FIELDS = [
+    { fieldKey:"numero_factura",  label:"N° de factura",  icon:"🧾", inputId:"gFacturaInput", chkClass:"gFacturaChk", btnId:"gFacturaAsignarBtn", placeholder:"Ej. 20009861" },
+    { fieldKey:"numero_oc_madre", label:"N° de OC madre", icon:"📄", inputId:"gOcMadreInput", chkClass:"gOcMadreChk", btnId:"gOcMadreAsignarBtn", placeholder:"Ej. 220905" }
+  ];
+
+  function renderAsignacionIndividual(cfg, items){
+    var html = '';
+    html += '<div class="modal-section-title">Asignar '+esc(cfg.label)+' por pedido</div>';
+    html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">Escribe el valor, marca a qué pedido(s) de este grupo pertenece y presiona "Asignar". Se guarda al instante — repite con un valor distinto para otro pedido.</div>';
+    html += '<div class="field-row"><label>'+esc(cfg.label)+'</label><input type="text" id="'+cfg.inputId+'" placeholder="'+esc(cfg.placeholder)+'"></div>';
+    html += '<div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;">';
+    items.forEach(function(p){
+      var actual = p[cfg.fieldKey];
+      html += '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;">'+
+        '<input type="checkbox" class="'+cfg.chkClass+'" data-id="'+p.id+'" style="width:auto;flex:none;">'+
+        '<span style="flex:1;">'+esc(p.proveedor||"—")+(p.numero_pedido?' <span class="muted">#'+esc(p.numero_pedido)+'</span>':'')+'</span>'+
+        '<span style="font-size:11.5px;'+(actual?'':'color:var(--red);')+'">'+(actual?(esc(cfg.label)+': '+esc(actual)):'Sin asignar')+'</span>'+
+      '</label>';
+    });
+    html += '</div>';
+    html += '<button type="button" class="icon-btn" id="'+cfg.btnId+'" style="width:100%;justify-content:center;margin-bottom:20px;">'+cfg.icon+' Asignar '+esc(cfg.label.toLowerCase())+' a los seleccionados</button>';
+    return html;
+  }
+
+  function bindAsignacionIndividual(cfg){
+    $(cfg.btnId).addEventListener("click", function(){
+      var val = $(cfg.inputId).value.trim();
+      if(!val){ showToast("Escribe un valor para "+cfg.label.toLowerCase(), true); return; }
+      var ids = Array.from(document.querySelectorAll("."+cfg.chkClass+":checked")).map(function(c){ return c.dataset.id; });
+      if(!ids.length){ showToast("Selecciona al menos un pedido", true); return; }
+      if(!aw){ showToast("No hay conexión a Appwrite configurada", true); return; }
+      var btn = this;
+      btn.disabled = true;
+      var ov = showSaveOverlay("Asignando "+cfg.label.toLowerCase()+" a "+ids.length+" pedido(s)…", "Sincronizando con Appwrite");
+      var pendientes = ids.slice();
+      var fallidos = [];
+      function siguiente(){
+        if(!pendientes.length){
+          btn.disabled = false;
+          if(fallidos.length){
+            saveOverlayError(ov, fallidos.length+" pedido(s) no se pudieron actualizar");
+            setTimeout(function(){ ov.remove(); }, 2400);
+          } else {
+            saveOverlaySuccess(ov, '"'+val+'" asignado a '+ids.length+" pedido(s)");
+            setTimeout(function(){ ov.remove(); }, 700);
+          }
+          // Guarda lo que ya se había escrito en "Datos a aplicar a todo el grupo" y la
+          // selección de checks ANTES de recargar, y lo restaura después — así una asignación
+          // rápida de factura/OC no borra lo demás que el usuario ya venía llenando.
+          var draft = collectGroupDraft();
+          loadPedidos().then(function(){ renderGroupDetalle(true); applyGroupDraft(draft); });
+          return;
+        }
+        var rowId = pendientes.shift();
+        var data = {}; data[cfg.fieldKey] = val; data.updated_at = new Date().toISOString();
+        awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: rowId, data: data })
+          .then(siguiente)
+          .catch(function(err){ console.error(err); fallidos.push(rowId); siguiente(); });
+      }
+      siguiente();
+    });
+  }
+
+  function collectGroupDraft(){
+    var draft = {};
+    GROUP_FIELDS.forEach(function(f){
+      var el = $("gf_"+f.key);
+      if(el && el.value) draft[f.key] = el.value;
+    });
+    return draft;
+  }
+  function applyGroupDraft(draft){
+    if(!draft) return;
+    Object.keys(draft).forEach(function(key){
+      var el = $("gf_"+key);
+      if(el) el.value = draft[key];
+    });
+  }
+
+  // ---------- dictado por voz para campos de fecha/hora ----------
+  // Web Speech API (Chrome/Edge). Si el navegador no lo soporta, simplemente no aparece el
+  // botón de micrófono y el campo sigue funcionando de forma normal (picker manual).
+  var MESES_VOZ = { enero:1, febrero:2, marzo:3, abril:4, mayo:5, junio:6, julio:7, agosto:8, septiembre:9, setiembre:9, octubre:10, noviembre:11, diciembre:12 };
+  function pad2(n){ return (n<10?"0":"")+n; }
+
+  function parseFechaHablada(textoOriginal, conHora){
+    var t = " "+textoOriginal.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[.,]/g," ")+" ";
+    t = t.replace(/\s+/g," ");
+
+    var year = (new Date()).getFullYear();
+    var mYear = t.match(/\b(19|20)\d{2}\b/);
+    if(mYear){ year = parseInt(mYear[0],10); t = t.replace(mYear[0]," "); }
+
+    var hour = null, minute = 0;
+    var mTime = t.match(/\b(\d{1,2})[:\s](\d{2})\b\s*(a\s*m|p\s*m)?/);
+    if(mTime){
+      hour = parseInt(mTime[1],10);
+      minute = parseInt(mTime[2],10);
+      var mer = mTime[3] ? mTime[3].replace(/\s+/g,"") : null;
+      if(!mer){
+        if(t.indexOf("de la tarde")!==-1 || t.indexOf("de la noche")!==-1) mer = "pm";
+        else if(t.indexOf("de la manana")!==-1) mer = "am";
+      }
+      if(mer==="pm" && hour<12) hour += 12;
+      if(mer==="am" && hour===12) hour = 0;
+      t = t.replace(mTime[0]," ");
+    }
+
+    var month = null;
+    Object.keys(MESES_VOZ).forEach(function(m){
+      if(t.indexOf(" "+m)!==-1){ month = MESES_VOZ[m]; t = t.replace(m," "); }
+    });
+
+    var day = null;
+    var mDay = t.match(/\b(\d{1,2})\b/);
+    if(mDay) day = parseInt(mDay[1],10);
+
+    if(!day || !month || day<1 || day>31 || month<1 || month>12) return null;
+
+    var iso = year+"-"+pad2(month)+"-"+pad2(day);
+    if(!conHora || hour===null) return iso;
+    return iso+"T"+pad2(hour)+":"+pad2(minute);
+  }
+
+  function attachVoiceButton(inputId, conHora){
+    var input = $(inputId);
+    if(!input || input.dataset.voiceReady) return;
+    var Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!Rec) return;
+    input.dataset.voiceReady = "1";
+    var wrap = document.createElement("div");
+    wrap.style.display = "flex";
+    wrap.style.gap = "6px";
+    input.parentNode.insertBefore(wrap, input);
+    input.style.flex = "1";
+    wrap.appendChild(input);
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "icon-btn voice-btn";
+    btn.title = 'Dictar por voz — ej: "27 de julio 2026, 4:45 pm"';
+    btn.textContent = "🎤";
+    btn.style.flex = "none";
+    wrap.appendChild(btn);
+    btn.addEventListener("click", function(){
+      var rec = new Rec();
+      rec.lang = "es-PA";
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      btn.textContent = "🔴";
+      btn.disabled = true;
+      rec.onresult = function(e){
+        var texto = e.results[0][0].transcript;
+        var valor = parseFechaHablada(texto, conHora);
+        if(valor){
+          input.value = valor;
+          showToast('Se entendió: "'+texto+'"');
+        } else {
+          showToast('No se entendió la fecha en: "'+texto+'". Intenta, por ejemplo: "27 de julio 2026, 4:45 pm"', true);
+        }
+      };
+      rec.onerror = function(){ showToast("No se pudo usar el micrófono", true); };
+      rec.onend = function(){ btn.textContent = "🎤"; btn.disabled = false; };
+      rec.start();
+    });
+  }
+
   function renderGroupModal(){
     var grupos = gruposMultiples();
     var html = '';
@@ -2263,22 +2436,29 @@
     '</select></div>';
     html += '<div id="gGrupoDetalle"></div>';
     $("groupBody").innerHTML = html;
-    $("gGrupoSelect").addEventListener("change", renderGroupDetalle);
+    $("gGrupoSelect").addEventListener("change", function(){ renderGroupDetalle(false); });
     renderGroupDetalle();
   }
 
-  function renderGroupDetalle(){
+  function renderGroupDetalle(preserve){
     var grupos = gruposMultiples();
     var gid = $("gGrupoSelect").value;
     var grupo = grupos.find(function(g){ return g.id === gid; });
-    groupSelectedIds = new Set(grupo ? grupo.items.map(function(p){ return p.id; }) : []);
+    var itemIds = grupo ? grupo.items.map(function(p){ return p.id; }) : [];
+    if(preserve && groupSelectedIds){
+      var kept = new Set();
+      itemIds.forEach(function(id){ if(groupSelectedIds.has(id)) kept.add(id); });
+      groupSelectedIds = kept;
+    } else {
+      groupSelectedIds = new Set(itemIds);
+    }
 
     var html = '';
     html += '<div class="modal-section-title">Pedidos de este grupo</div>';
     html += '<div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin-bottom:14px;">';
     (grupo ? grupo.items : []).forEach(function(p){
       html += '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;">'+
-        '<input type="checkbox" class="gPedidoChk" data-id="'+p.id+'" checked style="width:auto;flex:none;">'+
+        '<input type="checkbox" class="gPedidoChk" data-id="'+p.id+'" '+(groupSelectedIds.has(p.id)?'checked':'')+' style="width:auto;flex:none;">'+
         '<span style="flex:1;">'+esc(p.proveedor||"—")+(p.numero_pedido?' <span class="muted">#'+esc(p.numero_pedido)+'</span>':'')+'</span>'+
         '<span class="muted" style="font-size:11.5px;">'+esc(estadoPedido(p).label)+'</span>'+
         '<span class="muted" style="font-size:11.5px;">'+(p.monto_pedido!=null?fmtUSD(p.monto_pedido):'')+'</span>'+
@@ -2286,28 +2466,16 @@
     });
     html += '</div>';
 
-    // Cada pedido de un grupo casi siempre tiene su propia factura, así que en vez de un solo
-    // campo aplicado a todos, esto permite: escribir un número, marcar a cuáles pedidos
-    // pertenece, presionar "Asignar" (se guarda de inmediato), y repetir con el siguiente número.
-    html += '<div class="modal-section-title">Asignar N° de factura por pedido</div>';
-    html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">Escribe el número de factura, marca a qué pedido(s) de este grupo pertenece y presiona "Asignar". Se guarda al instante — repite con cada número distinto.</div>';
-    html += '<div class="field-row"><label>N° de factura</label><input type="text" id="gFacturaInput" placeholder="Ej. 20009861"></div>';
-    html += '<div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;">';
-    (grupo ? grupo.items : []).forEach(function(p){
-      html += '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;">'+
-        '<input type="checkbox" class="gFacturaChk" data-id="'+p.id+'" style="width:auto;flex:none;">'+
-        '<span style="flex:1;">'+esc(p.proveedor||"—")+(p.numero_pedido?' <span class="muted">#'+esc(p.numero_pedido)+'</span>':'')+'</span>'+
-        '<span style="font-size:11.5px;'+(p.numero_factura?'':'color:var(--red);')+'">'+(p.numero_factura?('Factura: '+esc(p.numero_factura)):'Sin factura')+'</span>'+
-      '</label>';
+    ASIGNACION_INDIVIDUAL_FIELDS.forEach(function(cfg){
+      html += renderAsignacionIndividual(cfg, grupo ? grupo.items : []);
     });
-    html += '</div>';
-    html += '<button type="button" class="icon-btn" id="gFacturaAsignarBtn" style="width:100%;justify-content:center;margin-bottom:20px;">🧾 Asignar factura a los seleccionados</button>';
 
     html += '<div class="modal-section-title">Datos a aplicar a todo el grupo</div>';
     html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">Completa solo los campos que quieras aplicar — los que dejes en blanco no modifican nada.</div>';
     html += '<div class="field-grid">';
     GROUP_FIELDS.forEach(function(f){
-      html += '<div class="field-row"><label>'+esc(f.label)+'</label><input type="'+f.type+'" id="gf_'+f.key+'"></div>';
+      var langAttr = f.type === "datetime-local" ? ' lang="en-GB"' : '';
+      html += '<div class="field-row"><label>'+esc(f.label)+'</label><input type="'+f.type+'"'+langAttr+' id="gf_'+f.key+'"></div>';
     });
     html += '</div>';
 
@@ -2318,37 +2486,9 @@
         else groupSelectedIds.delete(c.dataset.id);
       });
     });
-
-    $("gFacturaAsignarBtn").addEventListener("click", function(){
-      var val = $("gFacturaInput").value.trim();
-      if(!val){ showToast("Escribe un número de factura", true); return; }
-      var ids = Array.from(document.querySelectorAll(".gFacturaChk:checked")).map(function(c){ return c.dataset.id; });
-      if(!ids.length){ showToast("Selecciona al menos un pedido para esta factura", true); return; }
-      if(!aw){ showToast("No hay conexión a Appwrite configurada", true); return; }
-      var btn = this;
-      btn.disabled = true;
-      var ov = showSaveOverlay("Asignando factura a "+ids.length+" pedido(s)…", "Sincronizando con Appwrite");
-      var pendientes = ids.slice();
-      var fallidos = [];
-      function siguiente(){
-        if(!pendientes.length){
-          btn.disabled = false;
-          if(fallidos.length){
-            saveOverlayError(ov, fallidos.length+" pedido(s) no se pudieron actualizar");
-            setTimeout(function(){ ov.remove(); }, 2400);
-          } else {
-            saveOverlaySuccess(ov, 'Factura "'+val+'" asignada a '+ids.length+" pedido(s)");
-            setTimeout(function(){ ov.remove(); }, 700);
-          }
-          loadPedidos().then(function(){ renderGroupDetalle(); });
-          return;
-        }
-        var rowId = pendientes.shift();
-        awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: rowId, data: { numero_factura: val, updated_at: new Date().toISOString() } })
-          .then(siguiente)
-          .catch(function(err){ console.error(err); fallidos.push(rowId); siguiente(); });
-      }
-      siguiente();
+    ASIGNACION_INDIVIDUAL_FIELDS.forEach(function(cfg){ bindAsignacionIndividual(cfg); });
+    GROUP_FIELDS.forEach(function(f){
+      if(f.type === "date" || f.type === "datetime-local") attachVoiceButton("gf_"+f.key, f.type === "datetime-local");
     });
   }
 
