@@ -746,6 +746,9 @@
     { id:"monto_oc_homologada", icon:"💵", label:"Monto homologado (USD)", group:"homolog", row:function(p){
         return '<div class="field-row"><label>Monto homologado (USD)</label><input type="number" step="0.01" id="f_monto_oc_homologada" value="'+(p.monto_oc_homologada!=null?p.monto_oc_homologada:'')+'" placeholder="Valor tras el ajuste de Sababa"></div>';
       } },
+    { id:"piezas", icon:"🔢", label:"Piezas (Excel homologado)", group:"homolog", row:function(p){
+        return '<div class="field-row"><label>Piezas (Excel homologado)</label><input type="number" step="1" id="f_piezas" value="'+(p.piezas!=null?p.piezas:'')+'" placeholder="Se llena automático desde Consolidar despacho"></div>';
+      } },
     { id:"costo_landed", icon:"💵", label:"Costo landed (USD)", row:function(p){
         return '<div class="field-row"><label>Costo landed (USD)</label><input type="number" step="0.01" id="f_costo_landed" value="'+(p.costo_landed!=null?p.costo_landed:'')+'"></div>';
       } },
@@ -758,8 +761,12 @@
     { id:"fecha_factura_fiscal_sababa", icon:"💳", label:"Factura fiscal Sababa / Liquidación (fecha)", row:function(p){
         return '<div class="field-row"><label>💳 Factura fiscal Sababa / Liquidación (fecha)</label><input type="date" id="f_fecha_factura_fiscal_sababa" value="'+(p.fecha_factura_fiscal_sababa||'')+'"></div>';
       } },
-    { id:"fecha_recepcion_final", icon:"🏁", label:"Mercancía recibida en CDF", row:function(p){
-        return '<div class="field-row"><label>🏁 Mercancía recibida en CDF</label><input type="date" id="f_fecha_recepcion_final" value="'+(p.fecha_recepcion_final||'')+'"></div>';
+    { id:"fecha_recepcion_final", icon:"🏁", label:"Mercancía recibida", row:function(p){
+        return '<div class="field-row"><label>🏁 Mercancía recibida <span class="muted" style="font-weight:400;">(punto de recepción)</span></label><div style="display:flex;gap:6px;">'+
+          '<input type="date" id="f_fecha_recepcion_final" value="'+(p.fecha_recepcion_final||'')+'" style="flex:1;">'+
+          '<select id="f_punto_recepcion_final" style="flex:none;width:auto;"><option value="">Punto…</option>'+
+          PUNTO_RECEPCION_OPCIONES.map(function(o){ return '<option value="'+esc(o)+'"'+(p.punto_recepcion_final===o?' selected':'')+'>'+esc(o)+'</option>'; }).join("")+
+        '</select></div></div>';
       } },
     { id:"numero_embarque", icon:"📦", label:"N° embarque (sistema index)", row:function(p){
         return '<div class="field-row"><label>N° embarque (sistema index)</label><input id="f_numero_embarque" value="'+esc(p.numero_embarque||'')+'" placeholder="Para heredar el costeo más adelante"></div>';
@@ -1698,12 +1705,14 @@
     html += '<div class="comm-item"><div class="comm-label">Costo landed</div><div class="comm-val">'+(p.costo_landed?fmtUSD(p.costo_landed):'<span class="muted">Sin registrar</span>')+'</div></div>';
     html += '<div class="comm-item"><div class="comm-label">Condición de pago</div><div class="comm-val">'+(p.credito?('Crédito'+(p.dias_credito?' · '+esc(p.dias_credito)+' días':'')):('Pago inmediato'+(p.fecha_pago?' · '+fmtDate(p.fecha_pago):'')))+'</div></div>';
     html += '<div class="comm-item"><div class="comm-label">Bultos (inicial / final)</div><div class="comm-val">'+(p.bultos_inicial!=null?esc(p.bultos_inicial):'—')+' / '+(p.bultos_final!=null?esc(p.bultos_final):'—')+'</div></div>';
+    html += '<div class="comm-item"><div class="comm-label">Punto de recepción final</div><div class="comm-val">'+(p.punto_recepcion_final?esc(p.punto_recepcion_final):'<span class="muted">Sin registrar</span>')+'</div></div>';
     html += '</div>';
-    if(p.tipo_embarque!=="liquidacion" && (p.numero_oc_homologada || p.monto_oc_homologada)){
+    if(p.tipo_embarque!=="liquidacion" && (p.numero_oc_homologada || p.monto_oc_homologada || p.piezas!=null)){
       html += '<div class="homolog-block"><div class="comm-label" style="margin-bottom:6px;">Orden de compra homologada (Sababa)</div>'+
         '<div class="comm-grid" style="margin-bottom:0;">'+
         '<div class="comm-item" style="border:none;padding:0;"><div class="comm-label">N° OC homologada</div><div class="comm-val">'+(p.numero_oc_homologada?esc(p.numero_oc_homologada):'<span class="muted">—</span>')+'</div></div>'+
         '<div class="comm-item" style="border:none;padding:0;"><div class="comm-label">Monto homologado</div><div class="comm-val">'+(p.monto_oc_homologada?fmtUSD(p.monto_oc_homologada):'<span class="muted">—</span>')+'</div></div>'+
+        '<div class="comm-item" style="border:none;padding:0;"><div class="comm-label">Piezas (Excel homologado)</div><div class="comm-val">'+(p.piezas!=null?esc(p.piezas):'<span class="muted">—</span>')+'</div></div>'+
         '</div></div>';
     }
 
@@ -2054,15 +2063,22 @@
   // ---------- consolidación de despacho a Sababa ----------
   // Permite elegir varios pedidos ya facturados (etapa "Factura recibida" en adelante) y aplicarles
   // de una sola vez los mismos datos de trámite/despacho, en lugar de digitarlos pedido por pedido.
+  // "fecha_envio_sabada" es datetime-local (no solo "date") para que coincida EXACTO con el tipo
+  // de su <input> en el formulario individual (f_fecha_envio_sabada) — si no, el valor guardado
+  // aquí queda en un formato que ese input no puede mostrar y el campo aparece vacío.
   var CONSOLID_FIELDS = [
-    { key:"fecha_envio_sabada",           label:"Instrucciones enviadas al tramitador (fecha)", type:"date" },
+    { key:"fecha_envio_sabada",           label:"Instrucciones enviadas al tramitador (fecha)", type:"datetime-local" },
     { key:"fecha_despacho_sabada",        label:"Fecha de despacho Sababa",                     type:"date" },
     { key:"numero_factura_fiscal_sababa", label:"N° de factura fiscal Sababa",                  type:"text" },
     { key:"fecha_factura_fiscal_sababa",  label:"Fecha de factura fiscal Sababa",               type:"date" },
     { key:"fecha_recepcion_bodega",       label:"Fecha de recepción en bodega Sababa",          type:"date" },
-    { key:"fecha_recepcion_final",        label:"Fecha de recepción final (CDF)",               type:"date" },
+    { key:"fecha_recepcion_final",        label:"Fecha de recepción final",                     type:"date" },
     { key:"numero_embarque",              label:"N° de embarque",                               type:"text" }
   ];
+  // Punto de recepción final — hay dos posibles (CDF o Westland). Es un selector aparte, va
+  // junto al campo de fecha "fecha_recepcion_final" en el HTML pero se guarda en su propia
+  // columna (punto_recepcion_final) para no mezclarlo con la fecha.
+  var PUNTO_RECEPCION_OPCIONES = ["CDF", "Westland"];
   var FACTURA_RECIBIDA_IDX = ETAPAS.findIndex(function(e){ return e.estado === "Factura recibida"; });
   // Por defecto solo se muestran estas dos etapas — son las que típicamente están listas para
   // consolidar despacho. "En tránsito a CDF" y posteriores se ocultan por defecto porque, al llenar
@@ -2080,37 +2096,87 @@
     }).sort(function(a,b){ return (a.proveedor||"").localeCompare(b.proveedor||""); });
   }
 
+  var consolidateSearchTerm = "";
+  // Mapeo pedido→{piezas, monto_homologado} calculado desde el Excel de OC homologada (ver
+  // más abajo). Se fusiona con el patch global al aplicar, así cada pedido recibe SU propia
+  // pieza/monto en vez de un valor único para todos.
+  var consolidatePerPedidoPatch = {};
+
   function renderConsolidateModal(){
     consolidateSelectedIds = new Set();
+    consolidateSearchTerm = "";
+    consolidatePerPedidoPatch = {};
     var html = '';
     html += '<div class="modal-section-title">Datos globales a aplicar</div>';
     html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">Completa solo los campos que quieras aplicar — los que dejes en blanco no modifican nada. Se copiarán tal cual a todos los pedidos que marques abajo.</div>';
     html += '<div class="field-grid">';
     CONSOLID_FIELDS.forEach(function(f){
-      html += '<div class="field-row"><label>'+esc(f.label)+'</label><input type="'+f.type+'" id="cf_'+f.key+'"></div>';
+      var langAttr = f.type === "datetime-local" ? ' lang="en-GB"' : '';
+      if(f.key === "fecha_recepcion_final"){
+        html += '<div class="field-row"><label>'+esc(f.label)+'</label><div style="display:flex;gap:6px;">'+
+          '<input type="'+f.type+'" id="cf_'+f.key+'" style="flex:1;">'+
+          '<select id="cf_punto_recepcion_final" class="icon-btn" style="cursor:pointer;flex:none;width:auto;"><option value="">Punto…</option>'+
+          PUNTO_RECEPCION_OPCIONES.map(function(o){ return '<option value="'+esc(o)+'">'+esc(o)+'</option>'; }).join("")+
+        '</select></div></div>';
+      } else {
+        html += '<div class="field-row"><label>'+esc(f.label)+'</label><input type="'+f.type+'"'+langAttr+' id="cf_'+f.key+'"></div>';
+      }
     });
     html += '</div>';
 
     html += '<div class="modal-section-title">Pedidos a consolidar</div>';
+    html += '<div class="field-row"><label>Buscar</label><input type="text" id="cfBuscarInput" class="search-input" placeholder="Proveedor, N° de pedido, N° de factura o N° de bultos..." value="'+esc(consolidateSearchTerm)+'"></div>';
     html += '<div class="field-row"><label>Filtro</label><select id="cfFilterSelect" class="icon-btn" style="cursor:pointer;width:100%;">'+
       '<option value="default">Por defecto: Factura recibida + En bodega Sababa</option>'+
       '<option value="all">Ver todos (desde "Factura recibida" en adelante)</option>'+
     '</select></div>';
     html += '<div id="cfPedidosListWrap"></div>';
 
+    html += '<div class="modal-section-title">🧮 Mapeo de OC homologada (Excel)</div>';
+    html += '<div class="muted" style="font-size:12px;margin:-6px 0 10px;">Sube el Excel de OC homologada (columnas "Oc Homologada", "Piezas" y "Costo Homologado Total"). Se agrupan piezas y costo por cada OC homologada y se reparten automáticamente entre los pedidos marcados arriba, cruzando por su N° de OC madre.</div>';
+    html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">'+
+      '<input type="file" id="cfExcelInput" accept=".xlsx,.xls" style="flex:1;min-width:180px;">'+
+      '<button type="button" class="icon-btn" id="cfExcelProcessBtn" style="flex:none;">📥 Procesar y repartir</button>'+
+    '</div>';
+    html += '<div id="cfExcelResult"></div>';
+
     $("consolidateBody").innerHTML = html;
+    CONSOLID_FIELDS.forEach(function(f){
+      if(f.type === "date" || f.type === "datetime-local") attachVoiceButton("cf_"+f.key, f.type === "datetime-local");
+    });
     $("cfFilterSelect").addEventListener("change", renderConsolidatePedidosList);
+    $("cfBuscarInput").addEventListener("input", function(){
+      // Igual que en "Asignar pedidos existentes": hay que re-enfocar el input NUEVO tras
+      // re-renderizar, o el cursor se sale del campo en cada letra escrita.
+      var pos = this.selectionStart;
+      consolidateSearchTerm = this.value;
+      renderConsolidatePedidosList();
+      var nuevo = $("cfBuscarInput");
+      nuevo.focus();
+      nuevo.setSelectionRange(pos, pos);
+    });
+    $("cfExcelProcessBtn").addEventListener("click", procesarExcelHomologadoClick);
     renderConsolidatePedidosList();
+  }
+
+  function pedidoCoincideBusqueda(p, term){
+    if(!term) return true;
+    var hay = [p.proveedor, p.numero_pedido, p.numero_factura, p.bultos_final, p.bultos_inicial]
+      .filter(function(v){ return v!=null && v!==""; }).join(" ").toLowerCase();
+    return hay.indexOf(term) !== -1;
   }
 
   function renderConsolidatePedidosList(){
     var modeAll = $("cfFilterSelect").value === "all";
-    var candidatos = pedidosConsolidables(modeAll);
+    var term = (consolidateSearchTerm||"").trim().toLowerCase();
+    var candidatos = pedidosConsolidables(modeAll).filter(function(p){ return pedidoCoincideBusqueda(p, term); });
     var html = '';
     if(!candidatos.length){
-      html += '<div class="empty-state">'+(modeAll
-        ? 'No hay pedidos en "Factura recibida" o etapas posteriores por ahora.'
-        : 'No hay pedidos en "Factura recibida" o "En bodega Sababa" por ahora. Prueba el filtro "Ver todos".')+'</div>';
+      html += '<div class="empty-state">'+(term
+        ? 'Ningún pedido coincide con la búsqueda.'
+        : (modeAll
+          ? 'No hay pedidos en "Factura recibida" o etapas posteriores por ahora.'
+          : 'No hay pedidos en "Factura recibida" o "En bodega Sababa" por ahora. Prueba el filtro "Ver todos".'))+'</div>';
     } else {
       html += '<div style="margin:0 0 8px;"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--text-muted);"><input type="checkbox" id="cfSelectAll" style="width:auto;"> Seleccionar todos ('+candidatos.length+')</label></div>';
       html += '<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:10px;">';
@@ -2118,7 +2184,7 @@
         var checked = consolidateSelectedIds.has(p.id) ? ' checked' : '';
         html += '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;">'+
           '<input type="checkbox" class="cfPedidoChk" data-id="'+p.id+'"'+checked+' style="width:auto;flex:none;">'+
-          '<span style="flex:1;">'+esc(p.proveedor||"—")+(p.numero_pedido?' <span class="muted">#'+esc(p.numero_pedido)+'</span>':'')+'</span>'+
+          '<span style="flex:1;">'+esc(p.proveedor||"—")+(p.numero_pedido?' <span class="muted">#'+esc(p.numero_pedido)+'</span>':'')+(p.grupo_multiple?' <span class="muted">· 👥</span>':'')+'</span>'+
           '<span class="muted" style="font-size:11.5px;">'+esc(estadoPedido(p).label)+'</span>'+
           '<span class="muted" style="font-size:11.5px;">'+(p.bultos_final!=null?p.bultos_final+" blts":"")+'</span>'+
         '</label>';
@@ -2148,6 +2214,125 @@
     }
   }
 
+  // ---------- mapeo de OC homologada desde Excel ----------
+  // Formato esperado (hoja tipo "Sheet1" de un cálculo de landed cost): encabezados con "Oc
+  // Original", "Oc Homologada", "Piezas" y "Costo Homologado Total", y varias filas de producto
+  // por cada OC (una misma OC puede repartirse en varias líneas de producto). Se agrupan sumando
+  // piezas y costo por cada valor distinto de "Oc Original" — que es la que corresponde al
+  // "N° de OC madre" del pedido — y se conserva el valor de "Oc Homologada" (hija) de ese grupo.
+  function normOc(v){ return String(v==null?"":v).trim().replace(/\.0$/,""); }
+
+  function extraerFilasHomologado(workbook){
+    var headerInfo = null;
+    workbook.SheetNames.forEach(function(name){
+      if(headerInfo) return;
+      var rows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header:1, defval:null });
+      for(var i=0;i<Math.min(rows.length,15) && !headerInfo;i++){
+        var row = rows[i];
+        if(!row) continue;
+        var colOcOriginal = -1, colOcHomologada = -1, colPiezas = -1, colMonto = -1;
+        row.forEach(function(c, ci){
+          if(typeof c !== "string") return;
+          var low = c.trim().toLowerCase();
+          if(low.indexOf("oc original") !== -1) colOcOriginal = ci;
+          else if(low.indexOf("oc homologada") !== -1) colOcHomologada = ci;
+          if(low === "piezas") colPiezas = ci;
+          if(low.indexOf("costo homologado total") !== -1) colMonto = ci;
+        });
+        if(colOcOriginal !== -1 && colPiezas !== -1 && colMonto !== -1){
+          headerInfo = { rows: rows, headerRowIdx: i, colOcOriginal: colOcOriginal, colOcHomologada: colOcHomologada, colPiezas: colPiezas, colMonto: colMonto };
+        }
+      }
+    });
+    if(!headerInfo) return null;
+    var porOc = {};
+    for(var r=headerInfo.headerRowIdx+1; r<headerInfo.rows.length; r++){
+      var row = headerInfo.rows[r];
+      if(!row) continue;
+      var ocRaw = row[headerInfo.colOcOriginal];
+      if(ocRaw===null || ocRaw==="") continue;
+      var ocKey = normOc(ocRaw);
+      var piezas = Number(row[headerInfo.colPiezas]) || 0;
+      var monto = Number(row[headerInfo.colMonto]) || 0;
+      var ocHomologada = headerInfo.colOcHomologada !== -1 ? row[headerInfo.colOcHomologada] : null;
+      if(!porOc[ocKey]) porOc[ocKey] = { piezas:0, monto:0, ocHomologada: null };
+      porOc[ocKey].piezas += piezas;
+      porOc[ocKey].monto += monto;
+      if(ocHomologada!=null && ocHomologada!=="") porOc[ocKey].ocHomologada = normOc(ocHomologada);
+    }
+    return porOc;
+  }
+
+  function procesarExcelHomologadoClick(){
+    var file = $("cfExcelInput").files[0];
+    if(!file){ showToast("Elige primero un archivo Excel", true); return; }
+    var ids = Array.from(consolidateSelectedIds || []);
+    if(!ids.length){ showToast("Marca primero los pedidos a los que se les repartirá el Excel", true); return; }
+    var reader = new FileReader();
+    reader.onload = function(e){
+      var porOc;
+      try {
+        var wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
+        porOc = extraerFilasHomologado(wb);
+      } catch(err){
+        console.error(err);
+        showToast("No se pudo leer el Excel", true);
+        return;
+      }
+      if(!porOc){
+        showToast('No se encontraron las columnas "Oc Homologada", "Piezas" y "Costo Homologado Total" en el Excel', true);
+        return;
+      }
+      var pedidosSel = ids.map(function(id){ return state.pedidos.find(function(p){ return p.id===id; }); }).filter(Boolean);
+      var encontrados = [], noEncontrados = [];
+      // El cruce es por "Oc Original" del Excel contra el "N° de OC madre" del pedido. Se
+      // escribe en los campos que la app ya tiene para esto (numero_oc_homologada / monto_oc_homologada,
+      // usados en la sección "N° OC homologada (hija)" del detalle) más el nuevo campo "piezas".
+      Object.keys(porOc).forEach(function(ocKey){
+        var pedido = pedidosSel.find(function(p){ return normOc(p.numero_oc_madre) === ocKey; });
+        var datos = porOc[ocKey];
+        if(pedido){
+          consolidatePerPedidoPatch[pedido.id] = consolidatePerPedidoPatch[pedido.id] || {};
+          consolidatePerPedidoPatch[pedido.id].piezas = Math.round(datos.piezas);
+          consolidatePerPedidoPatch[pedido.id].monto_oc_homologada = Math.round(datos.monto*100)/100;
+          if(datos.ocHomologada) consolidatePerPedidoPatch[pedido.id].numero_oc_homologada = datos.ocHomologada;
+          encontrados.push({ oc: ocKey, ocHomologada: datos.ocHomologada, pedido: pedido, piezas: datos.piezas, monto: datos.monto });
+        } else {
+          noEncontrados.push({ oc: ocKey, piezas: datos.piezas, monto: datos.monto });
+        }
+      });
+      renderExcelHomologadoResult(encontrados, noEncontrados);
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function renderExcelHomologadoResult(encontrados, noEncontrados){
+    var html = '';
+    if(encontrados.length){
+      html += '<div class="muted" style="font-size:12px;margin-bottom:6px;">✅ '+encontrados.length+' OC homologada(s) emparejada(s) — se aplicarán al presionar "Aplicar a los pedidos seleccionados":</div>';
+      html += '<div style="border:1px solid var(--border);border-radius:10px;margin-bottom:10px;">';
+      encontrados.forEach(function(x){
+        html += '<div style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:12.5px;display:flex;justify-content:space-between;gap:8px;">'+
+          '<span>OC madre '+esc(x.oc)+(x.ocHomologada?' (hija '+esc(x.ocHomologada)+')':'')+' → '+esc(x.pedido.proveedor||"—")+(x.pedido.numero_pedido?' #'+esc(x.pedido.numero_pedido):'')+'</span>'+
+          '<span class="muted">'+Math.round(x.piezas)+' pzs · '+fmtUSD(x.monto)+'</span>'+
+        '</div>';
+      });
+      html += '</div>';
+    }
+    if(noEncontrados.length){
+      html += '<div style="color:var(--red);font-size:12.5px;margin-bottom:4px;">⚠️ '+noEncontrados.length+' OC homologada(s) del Excel no coinciden con el N° de OC madre de ningún pedido marcado — revisa que estén seleccionados arriba o que la OC madre esté bien escrita:</div>';
+      html += '<div style="border:1px solid var(--red);border-radius:10px;">';
+      noEncontrados.forEach(function(x){
+        html += '<div style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:12.5px;">OC madre '+esc(x.oc)+' — '+Math.round(x.piezas)+' pzs · '+fmtUSD(x.monto)+'</div>';
+      });
+      html += '</div>';
+    }
+    if(!encontrados.length && !noEncontrados.length){
+      html = '<div class="empty-state">El Excel no tenía filas con OC homologada.</div>';
+    }
+    $("cfExcelResult").innerHTML = html;
+  }
+
   function openConsolidateModal(){
     renderConsolidateModal();
     $("consolidateModal").classList.remove("hidden");
@@ -2162,14 +2347,17 @@
     var ids = Array.from(consolidateSelectedIds || []);
     if(!ids.length){ showToast("Selecciona al menos un pedido", true); return; }
 
-    var patch = {};
+    var patchGlobal = {};
     CONSOLID_FIELDS.forEach(function(f){
       var el = $("cf_"+f.key);
       var v = el ? el.value.trim() : "";
-      if(v) patch[f.key] = v;
+      if(v) patchGlobal[f.key] = v;
     });
-    if(!Object.keys(patch).length){ showToast("Completa al menos un campo global para aplicar", true); return; }
-    patch.updated_at = new Date().toISOString();
+    var elPunto = $("cf_punto_recepcion_final");
+    if(elPunto && elPunto.value) patchGlobal.punto_recepcion_final = elPunto.value;
+
+    var hayReparto = ids.some(function(id){ return !!consolidatePerPedidoPatch[id]; });
+    if(!Object.keys(patchGlobal).length && !hayReparto){ showToast("Completa al menos un campo global o procesa el Excel de OC homologada", true); return; }
 
     if(!aw){ showToast("No hay conexión a Appwrite configurada", true); return; }
     var applyBtn = this;
@@ -2195,7 +2383,11 @@
         return;
       }
       var rowId = pendientes.shift();
-      awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: rowId, data: patch })
+      // Cada pedido recibe el patch global MÁS su propio reparto de piezas/monto homologado
+      // (si se procesó un Excel de OC homologada) — nunca el mismo valor para todos.
+      var data = Object.assign({}, patchGlobal, consolidatePerPedidoPatch[rowId] || {});
+      data.updated_at = new Date().toISOString();
+      awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: rowId, data: data })
         .then(siguiente)
         .catch(function(err){ console.error(err); fallidos.push(rowId); siguiente(); });
     }
@@ -2215,27 +2407,30 @@
   // se guardan como fecha+hora ("datetime-local") en el pedido individual — si aquí se aplican
   // como solo-fecha ("date"), el valor queda en un formato que el input datetime-local del
   // formulario individual no puede mostrar, y el campo aparece vacío aunque sí se haya guardado.
+  // NOTA: los campos de la fase de DESPACHO (despacho Sababa, factura fiscal Sababa, recepción
+  // final CDF/Westland y N° de embarque) ya NO están aquí — Grupo múltiple cubre únicamente la
+  // fase de solicitud de factura (pedido → aprobación → documentación → OC → factura recibida →
+  // instrucciones al tramitador). Esos campos de despacho se aplican en "🧾 Consolidar despacho"
+  // para no duplicar el mismo dato en dos pantallas.
   var GROUP_FIELDS = [
     { key:"fecha_pedido",                 label:"Pedido enviado (fecha y hora en sistema)",     type:"datetime-local" },
-    { key:"fecha_pedido_real",            label:"Fecha de pedido (según correo del proveedor)", type:"date" },
     { key:"fecha_aprobacion",             label:"Fecha de aprobación del comprador",         type:"datetime-local" },
     { key:"fecha_aprobacion_gerente",     label:"Fecha de aprobación de gerencia",            type:"date" },
     { key:"fecha_envio_documentacion",    label:"Fecha de documento solicitado al proveedor", type:"datetime-local" },
     { key:"fecha_factura",                label:"Fecha de factura y traspaso recibidos",      type:"datetime-local" },
     { key:"fecha_envio_factura_comprador",label:"Fecha de factura enviada al comprador",      type:"datetime-local" },
     { key:"fecha_orden_compra",           label:"Fecha de orden de compra entregada",         type:"datetime-local" },
-    { key:"fecha_recepcion_bodega",       label:"Fecha de recepción en bodega Sababa",        type:"date" },
     { key:"fecha_envio_sabada",           label:"Instrucciones enviadas al tramitador (fecha)", type:"datetime-local" },
-    { key:"fecha_despacho_sabada",        label:"Fecha de despacho Sababa",                   type:"date" },
-    { key:"numero_factura_fiscal_sababa", label:"N° de factura fiscal Sababa",                type:"text" },
-    { key:"fecha_factura_fiscal_sababa",  label:"Fecha de factura fiscal Sababa",             type:"date" },
-    { key:"fecha_recepcion_final",        label:"Fecha de recepción final (CDF)",             type:"date" },
-    { key:"numero_embarque",              label:"N° de embarque",                             type:"text" }
+    { key:"fecha_recepcion_bodega",       label:"Fecha de recepción en bodega Sababa",        type:"date" }
   ];
   // "N° de factura" y "N° de OC madre" NO están arriba a propósito: dentro de un mismo grupo
   // múltiple, cada pedido casi siempre trae su propia factura y su propia OC (aunque hayan
   // llegado juntos en un mismo correo del proveedor). Esos dos se manejan con su propio widget
   // de "asignación por pedido" más abajo, en vez de aplicarse igual a todo el grupo.
+  // "Fecha de pedido" (según correo del proveedor) tampoco está arriba: por defecto se aplica
+  // igual a todo el grupo (ver bloque con checkbox más abajo, id gf_fecha_pedido_real), pero
+  // puede diferir de un pedido a otro dentro del mismo correo, así que también admite
+  // asignación individual como factura/OC madre.
 
   function gruposMultiples(){
     var porGrupo = {};
@@ -2256,15 +2451,23 @@
   // arriba de GROUP_FIELDS. Un solo widget genérico atiende a ambos (y a cualquier otro que se
   // agregue después) para no duplicar la lógica de "escribir → marcar pedidos → asignar".
   var ASIGNACION_INDIVIDUAL_FIELDS = [
-    { fieldKey:"numero_factura",  label:"N° de factura",  icon:"🧾", inputId:"gFacturaInput", chkClass:"gFacturaChk", btnId:"gFacturaAsignarBtn", placeholder:"Ej. 20009861" },
-    { fieldKey:"numero_oc_madre", label:"N° de OC madre", icon:"📄", inputId:"gOcMadreInput", chkClass:"gOcMadreChk", btnId:"gOcMadreAsignarBtn", placeholder:"Ej. 220905" }
+    { fieldKey:"numero_factura",  label:"N° de factura",  icon:"🧾", inputId:"gFacturaInput", chkClass:"gFacturaChk", btnId:"gFacturaAsignarBtn", placeholder:"Ej. 20009861", type:"text" },
+    { fieldKey:"numero_oc_madre", label:"N° de OC madre", icon:"📄", inputId:"gOcMadreInput", chkClass:"gOcMadreChk", btnId:"gOcMadreAsignarBtn", placeholder:"Ej. 220905", type:"text" }
   ];
+  // Config del widget de asignación individual para "Fecha de pedido" — no vive en el array de
+  // arriba porque solo se usa cuando se destilda "aplicar la misma fecha a todo el grupo" (ver
+  // renderFechaPedidoBlock). type:"date" hace que renderAsignacionIndividual pinte un input de
+  // fecha (sin hora) y que se le agregue el botón de dictado por voz.
+  var FECHA_PEDIDO_ASIGNACION_CFG = { fieldKey:"fecha_pedido_real", label:"Fecha de pedido", icon:"📅", inputId:"gFechaPedidoInput", chkClass:"gFechaPedidoChk", btnId:"gFechaPedidoAsignarBtn", placeholder:"", type:"date" };
 
   function renderAsignacionIndividual(cfg, items){
+    var tipo = cfg.type || "text";
     var html = '';
     html += '<div class="modal-section-title">Asignar '+esc(cfg.label)+' por pedido</div>';
-    html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">Escribe el valor, marca a qué pedido(s) de este grupo pertenece y presiona "Asignar". Se guarda al instante — repite con un valor distinto para otro pedido.</div>';
-    html += '<div class="field-row"><label>'+esc(cfg.label)+'</label><input type="text" id="'+cfg.inputId+'" placeholder="'+esc(cfg.placeholder)+'"></div>';
+    html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">'+(tipo==="date"
+      ? 'Elige o dicta la fecha, marca a qué pedido(s) de este grupo pertenece y presiona "Asignar". Se guarda al instante — repite con una fecha distinta para otro pedido.'
+      : 'Escribe el valor, marca a qué pedido(s) de este grupo pertenece y presiona "Asignar". Se guarda al instante — repite con un valor distinto para otro pedido.')+'</div>';
+    html += '<div class="field-row"><label>'+esc(cfg.label)+'</label><input type="'+tipo+'" id="'+cfg.inputId+'"'+(cfg.placeholder?' placeholder="'+esc(cfg.placeholder)+'"':'')+'></div>';
     html += '<div style="max-height:180px;overflow:auto;border:1px solid var(--border);border-radius:10px;margin-bottom:10px;">';
     items.forEach(function(p){
       var actual = p[cfg.fieldKey];
@@ -2324,6 +2527,12 @@
       var el = $("gf_"+f.key);
       if(el && el.value) draft[f.key] = el.value;
     });
+    // "Fecha de pedido" en modo "todo el grupo" vive fuera de GROUP_FIELDS (ver
+    // renderFechaPedidoBlock) — hay que preservarla igual que los demás campos.
+    if(groupFechaPedidoModoTodos){
+      var elFP = $("gf_fecha_pedido_real");
+      if(elFP && elFP.value) draft.fecha_pedido_real = elFP.value;
+    }
     return draft;
   }
   function applyGroupDraft(draft){
@@ -2470,6 +2679,10 @@
       html += renderAsignacionIndividual(cfg, grupo ? grupo.items : []);
     });
 
+    html += '<div class="modal-section-title">Fecha de pedido <span class="muted" style="font-weight:400;">(según correo del proveedor)</span></div>';
+    html += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12.5px;color:var(--text-muted);margin:-6px 0 10px;"><input type="checkbox" id="gFechaPedidoModoTodos" style="width:auto;" '+(groupFechaPedidoModoTodos?'checked':'')+'> Aplicar la misma fecha a todo el grupo</label>';
+    html += '<div id="gFechaPedidoWrap"></div>';
+
     html += '<div class="modal-section-title">Datos a aplicar a todo el grupo</div>';
     html += '<div class="muted" style="font-size:12px;margin:-6px 0 12px;">Completa solo los campos que quieras aplicar — los que dejes en blanco no modifican nada.</div>';
     html += '<div class="field-grid">';
@@ -2490,6 +2703,29 @@
     GROUP_FIELDS.forEach(function(f){
       if(f.type === "date" || f.type === "datetime-local") attachVoiceButton("gf_"+f.key, f.type === "datetime-local");
     });
+    renderFechaPedidoBlock(grupo ? grupo.items : []);
+    $("gFechaPedidoModoTodos").addEventListener("change", function(){
+      groupFechaPedidoModoTodos = this.checked;
+      renderFechaPedidoBlock(grupo ? grupo.items : []);
+    });
+  }
+
+  // "Fecha de pedido" es el único campo de GROUP_FIELDS que puede aplicarse de dos formas
+  // distintas: igual a todo el grupo (input de fecha suelto, id gf_fecha_pedido_real — lo lee
+  // groupApplyBtn como si fuera parte de GROUP_FIELDS) o por pedido individual (reutilizando el
+  // mismo widget de asignación que factura/OC madre). El checkbox decide cuál de los dos se pinta.
+  var groupFechaPedidoModoTodos = true;
+  function renderFechaPedidoBlock(items){
+    var wrap = $("gFechaPedidoWrap");
+    if(!wrap) return;
+    if(groupFechaPedidoModoTodos){
+      wrap.innerHTML = '<div class="field-row"><label>Fecha de pedido</label><input type="date" id="gf_fecha_pedido_real"></div>';
+      attachVoiceButton("gf_fecha_pedido_real", false);
+    } else {
+      wrap.innerHTML = renderAsignacionIndividual(FECHA_PEDIDO_ASIGNACION_CFG, items);
+      bindAsignacionIndividual(FECHA_PEDIDO_ASIGNACION_CFG);
+      attachVoiceButton(FECHA_PEDIDO_ASIGNACION_CFG.inputId, false);
+    }
   }
 
   // ---------- asignar pedidos existentes a un grupo múltiple ----------
@@ -2567,6 +2803,7 @@
   }
 
   function openGroupModal(){
+    groupFechaPedidoModoTodos = true;
     switchGroupTab("ver");
     $("groupModal").classList.remove("hidden");
   }
@@ -2661,6 +2898,13 @@
       var v = el ? el.value.trim() : "";
       if(v) patch[f.key] = v;
     });
+    // "Fecha de pedido" solo se incluye aquí cuando el checkbox "Aplicar la misma fecha a todo
+    // el grupo" está marcado — si no, se asigna pedido por pedido con su propio botón "Asignar".
+    if(groupFechaPedidoModoTodos){
+      var elFP = $("gf_fecha_pedido_real");
+      var vFP = elFP ? elFP.value.trim() : "";
+      if(vFP) patch.fecha_pedido_real = vFP;
+    }
     if(!Object.keys(patch).length){ showToast("Completa al menos un campo para aplicar", true); return; }
     patch.updated_at = new Date().toISOString();
 
@@ -2809,6 +3053,7 @@
       numero_oc_madre: $("f_numero_oc_madre").value.trim() || null,
       motivo_orden_compra: $("f_motivo_orden_compra").value.trim() || null,
       numero_oc_homologada: $("f_numero_oc_homologada").value.trim() || null,
+      piezas: num("f_piezas"),
       monto_oc_homologada: num("f_monto_oc_homologada"),
       fecha_envio_sabada: $("f_fecha_envio_sabada").value || null,
       fecha_despacho_sabada: $("f_fecha_despacho_sabada").value || null,
@@ -2817,6 +3062,7 @@
       fecha_factura_fiscal_sababa: $("f_fecha_factura_fiscal_sababa").value || null,
       numero_factura_fiscal_sababa: $("f_numero_factura_fiscal_sababa").value.trim() || null,
       fecha_recepcion_final: $("f_fecha_recepcion_final").value || null,
+      punto_recepcion_final: ($("f_punto_recepcion_final") && $("f_punto_recepcion_final").value) || null,
       numero_embarque: $("f_numero_embarque").value.trim() || null,
       costo_landed: num("f_costo_landed"),
       cancelado: $("f_cancelado").checked,
@@ -2975,6 +3221,8 @@
     {h:"Monto Homologado", f:function(p){ return p.monto_oc_homologada!=null?p.monto_oc_homologada:""; }},
     {h:"Landed Total", f:function(p){ return p.costo_landed!=null?p.costo_landed:""; }},
     {h:"Bultos Final", f:function(p){ return p.bultos_final!=null?p.bultos_final:""; }},
+    {h:"Piezas (Excel homologado)", f:function(p){ return p.piezas!=null?p.piezas:""; }},
+    {h:"Punto de recepción final", f:function(p){ return p.punto_recepcion_final||""; }},
     {h:"Fecha de Entrega en Bodega Sababa", f:function(p){ return p.fecha_recepcion_bodega||""; }},
     {h:"# OC.", f:function(p){ return p.numero_oc_madre||""; }},
     {h:"Fecha de OC.", f:function(p){ return p.fecha_orden_compra||""; }},
