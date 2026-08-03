@@ -2133,7 +2133,7 @@
     html += '<div id="cfPedidosListWrap"></div>';
 
     html += '<div class="modal-section-title">🧮 Mapeo de OC homologada (Excel)</div>';
-    html += '<div class="muted" style="font-size:12px;margin:-6px 0 10px;">Sube el Excel de OC homologada (columnas "Oc Homologada", "Piezas" y "Costo Homologado Total"). Se agrupan piezas y costo por cada OC homologada y se reparten automáticamente entre los pedidos marcados arriba, cruzando por su N° de OC madre.</div>';
+    html += '<div class="muted" style="font-size:12px;margin:-6px 0 10px;">Sube el Excel de OC homologada (columnas "Oc Original", "Oc Homologada" y "Costo Homologado" — "Piezas" es opcional, no todos los formatos la traen). Se agrupan piezas/costo por cada OC homologada y se reparten automáticamente entre los pedidos marcados arriba, cruzando por su N° de OC madre.</div>';
     html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">'+
       '<input type="file" id="cfExcelInput" accept=".xlsx,.xls" style="flex:1;min-width:180px;">'+
       '<button type="button" class="icon-btn" id="cfExcelProcessBtn" style="flex:none;">📥 Procesar y repartir</button>'+
@@ -2224,6 +2224,7 @@
 
   function extraerFilasHomologado(workbook){
     var headerInfo = null;
+    var faltantesDetectados = null; // se guarda el último intento, para reportar qué faltó si ninguna hoja calza
     workbook.SheetNames.forEach(function(name){
       if(headerInfo) return;
       var rows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header:1, defval:null });
@@ -2236,15 +2237,25 @@
           var low = c.trim().toLowerCase();
           if(low.indexOf("oc original") !== -1) colOcOriginal = ci;
           else if(low.indexOf("oc homologada") !== -1) colOcHomologada = ci;
+          // "Piezas" es OPCIONAL — algunos formatos (ej. el export de la app de Brian) no
+          // manejan piezas, solo costo homologado. No debe bloquear el mapeo si falta.
           if(low === "piezas") colPiezas = ci;
-          if(low.indexOf("costo homologado total") !== -1) colMonto = ci;
+          // Acepta "Costo Homologado" con o sin la palabra "Total" al final — distintos
+          // formatos lo nombran distinto (ej. "Costo Homologado" vs "Costo Homologado Total").
+          if(low.indexOf("costo homologado") !== -1) colMonto = ci;
         });
-        if(colOcOriginal !== -1 && colPiezas !== -1 && colMonto !== -1){
+        // Solo "Oc Original" y "Costo Homologado" son obligatorios para poder repartir montos.
+        if(colOcOriginal !== -1 && colMonto !== -1){
           headerInfo = { rows: rows, headerRowIdx: i, colOcOriginal: colOcOriginal, colOcHomologada: colOcHomologada, colPiezas: colPiezas, colMonto: colMonto };
+        } else if(!faltantesDetectados){
+          var falt = [];
+          if(colOcOriginal === -1) falt.push('"Oc Original"');
+          if(colMonto === -1) falt.push('"Costo Homologado"');
+          faltantesDetectados = falt;
         }
       }
     });
-    if(!headerInfo) return null;
+    if(!headerInfo) return { error: faltantesDetectados || ['"Oc Original"', '"Costo Homologado"'] };
     var porOc = {};
     for(var r=headerInfo.headerRowIdx+1; r<headerInfo.rows.length; r++){
       var row = headerInfo.rows[r];
@@ -2252,15 +2263,16 @@
       var ocRaw = row[headerInfo.colOcOriginal];
       if(ocRaw===null || ocRaw==="") continue;
       var ocKey = normOc(ocRaw);
-      var piezas = Number(row[headerInfo.colPiezas]) || 0;
+      var tienePiezas = headerInfo.colPiezas !== -1;
+      var piezas = tienePiezas ? (Number(row[headerInfo.colPiezas]) || 0) : null;
       var monto = Number(row[headerInfo.colMonto]) || 0;
       var ocHomologada = headerInfo.colOcHomologada !== -1 ? row[headerInfo.colOcHomologada] : null;
-      if(!porOc[ocKey]) porOc[ocKey] = { piezas:0, monto:0, ocHomologada: null };
-      porOc[ocKey].piezas += piezas;
+      if(!porOc[ocKey]) porOc[ocKey] = { piezas: tienePiezas ? 0 : null, monto:0, ocHomologada: null };
+      if(tienePiezas) porOc[ocKey].piezas += piezas;
       porOc[ocKey].monto += monto;
       if(ocHomologada!=null && ocHomologada!=="") porOc[ocKey].ocHomologada = normOc(ocHomologada);
     }
-    return porOc;
+    return { data: porOc, sinPiezas: headerInfo.colPiezas === -1 };
   }
 
   function procesarExcelHomologadoClick(){
@@ -2270,30 +2282,36 @@
     if(!ids.length){ showToast("Marca primero los pedidos a los que se les repartirá el Excel", true); return; }
     var reader = new FileReader();
     reader.onload = function(e){
-      var porOc;
+      var resultado;
       try {
         var wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
-        porOc = extraerFilasHomologado(wb);
+        resultado = extraerFilasHomologado(wb);
       } catch(err){
         console.error(err);
         showToast("No se pudo leer el Excel", true);
         return;
       }
-      if(!porOc){
-        showToast('No se encontraron las columnas "Oc Homologada", "Piezas" y "Costo Homologado Total" en el Excel', true);
+      if(resultado.error){
+        showToast('No se encontró la columna '+resultado.error.join(" y ")+' en el Excel', true);
         return;
       }
+      if(resultado.sinPiezas){
+        showToast('Este Excel no trae columna "Piezas" — se aplicará solo OC homologada y monto, sin tocar piezas', false);
+      }
+      var porOc = resultado.data;
       var pedidosSel = ids.map(function(id){ return state.pedidos.find(function(p){ return p.id===id; }); }).filter(Boolean);
       var encontrados = [], noEncontrados = [];
       // El cruce es por "Oc Original" del Excel contra el "N° de OC madre" del pedido. Se
       // escribe en los campos que la app ya tiene para esto (numero_oc_homologada / monto_oc_homologada,
-      // usados en la sección "N° OC homologada (hija)" del detalle) más el nuevo campo "piezas".
+      // usados en la sección "N° OC homologada (hija)" del detalle) más "piezas" cuando el Excel la trae.
       Object.keys(porOc).forEach(function(ocKey){
         var pedido = pedidosSel.find(function(p){ return normOc(p.numero_oc_madre) === ocKey; });
         var datos = porOc[ocKey];
         if(pedido){
           consolidatePerPedidoPatch[pedido.id] = consolidatePerPedidoPatch[pedido.id] || {};
-          consolidatePerPedidoPatch[pedido.id].piezas = Math.round(datos.piezas);
+          // Solo se toca "piezas" si el Excel de verdad traía esa columna — si no, no se
+          // sobreescribe con 0 el valor que ya tuviera el pedido.
+          if(datos.piezas != null) consolidatePerPedidoPatch[pedido.id].piezas = String(Math.round(datos.piezas));
           consolidatePerPedidoPatch[pedido.id].monto_oc_homologada = Math.round(datos.monto*100)/100;
           if(datos.ocHomologada) consolidatePerPedidoPatch[pedido.id].numero_oc_homologada = datos.ocHomologada;
           encontrados.push({ oc: ocKey, ocHomologada: datos.ocHomologada, pedido: pedido, piezas: datos.piezas, monto: datos.monto });
@@ -2306,6 +2324,8 @@
     reader.readAsArrayBuffer(file);
   }
 
+  function fmtPiezasExcel(v){ return v==null ? "—" : Math.round(v)+" pzs"; }
+
   function renderExcelHomologadoResult(encontrados, noEncontrados){
     var html = '';
     if(encontrados.length){
@@ -2314,7 +2334,7 @@
       encontrados.forEach(function(x){
         html += '<div style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:12.5px;display:flex;justify-content:space-between;gap:8px;">'+
           '<span>OC madre '+esc(x.oc)+(x.ocHomologada?' (hija '+esc(x.ocHomologada)+')':'')+' → '+esc(x.pedido.proveedor||"—")+(x.pedido.numero_pedido?' #'+esc(x.pedido.numero_pedido):'')+'</span>'+
-          '<span class="muted">'+Math.round(x.piezas)+' pzs · '+fmtUSD(x.monto)+'</span>'+
+          '<span class="muted">'+fmtPiezasExcel(x.piezas)+' · '+fmtUSD(x.monto)+'</span>'+
         '</div>';
       });
       html += '</div>';
@@ -2323,7 +2343,7 @@
       html += '<div style="color:var(--red);font-size:12.5px;margin-bottom:4px;">⚠️ '+noEncontrados.length+' OC homologada(s) del Excel no coinciden con el N° de OC madre de ningún pedido marcado — revisa que estén seleccionados arriba o que la OC madre esté bien escrita:</div>';
       html += '<div style="border:1px solid var(--red);border-radius:10px;">';
       noEncontrados.forEach(function(x){
-        html += '<div style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:12.5px;">OC madre '+esc(x.oc)+' — '+Math.round(x.piezas)+' pzs · '+fmtUSD(x.monto)+'</div>';
+        html += '<div style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:12.5px;">OC madre '+esc(x.oc)+' — '+fmtPiezasExcel(x.piezas)+' · '+fmtUSD(x.monto)+'</div>';
       });
       html += '</div>';
     }
@@ -3066,7 +3086,7 @@
       numero_oc_madre: $("f_numero_oc_madre").value.trim() || null,
       motivo_orden_compra: $("f_motivo_orden_compra").value.trim() || null,
       numero_oc_homologada: $("f_numero_oc_homologada").value.trim() || null,
-      piezas: num("f_piezas"),
+      piezas: (function(){ var v = num("f_piezas"); return v!=null ? String(v) : null; })(),
       monto_oc_homologada: num("f_monto_oc_homologada"),
       fecha_envio_sabada: $("f_fecha_envio_sabada").value || null,
       fecha_despacho_sabada: $("f_fecha_despacho_sabada").value || null,
