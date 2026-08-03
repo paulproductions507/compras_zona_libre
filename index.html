@@ -660,9 +660,9 @@
     { key:"fecha_envio_documentacion",    label:"Documento solicitado al proveedor",       icon:"📤", estado:"Documento solicitado al proveedor" },
     { key:"fecha_factura",                label:"Factura y traspaso recibidos",            icon:"🧾", estado:"Factura recibida" },
     { key:"fecha_envio_factura_comprador", label:"Factura enviada al comprador (solicitud OC)", icon:"📨", estado:"Factura enviada a comprador" },
-    { key:"fecha_recepcion_bodega",       label:"Recibido en bodega Sababa (consolidación)", icon:"🏭", estado:"En bodega Sababa" },
     { key:"fecha_orden_compra",           label:"Orden de compra entregada",               icon:"📄", motivo:"motivo_orden_compra", estado:"OC entregada" },
     { key:"fecha_envio_sabada",           label:"Instrucciones enviadas al tramitador (carga a CDF)", icon:"🚚", estado:"En tránsito a CDF" },
+    { key:"fecha_recepcion_bodega",       label:"Recibido en bodega Sababa (consolidación)", icon:"🏭", estado:"En bodega Sababa" },
     { key:"fecha_factura_fiscal_sababa",  label:"Factura fiscal Sababa / OC homologada",   icon:"💳", estado:"OC homologada registrada" },
     { key:"fecha_recepcion_final",        label:"Mercancía recibida en CDF",               icon:"🏁", estado:"Recibido" }
   ];
@@ -2370,8 +2370,17 @@
       if(!pendientes.length){
         applyBtn.disabled = false;
         if(fallidos.length){
-          saveOverlayError(ov, fallidos.length+" pedido(s) no se pudieron actualizar");
-          setTimeout(function(){ ov.remove(); }, 2400);
+          // Mostramos el motivo REAL que reporta Appwrite (ej. atributo inválido, tipo de dato,
+          // restricción de tamaño) en vez de solo contar cuántos fallaron — así se diagnostica
+          // en el momento cuál campo está rechazando el guardado, sin adivinar.
+          var detalle = fallidos.map(function(f){
+            var p = state.pedidos.find(function(x){ return x.id===f.id; });
+            var nombre = p ? (p.proveedor||f.id) : f.id;
+            return nombre+": "+f.msg;
+          }).join(" | ");
+          console.error("Consolidar despacho - detalle de fallos:", fallidos);
+          saveOverlayError(ov, fallidos.length+" pedido(s) no se pudieron actualizar — "+detalle);
+          setTimeout(function(){ ov.remove(); }, 6000);
         } else {
           saveOverlaySuccess(ov, "Consolidación aplicada a "+ids.length+" pedido(s)");
           setTimeout(function(){
@@ -2389,7 +2398,11 @@
       data.updated_at = new Date().toISOString();
       awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: rowId, data: data })
         .then(siguiente)
-        .catch(function(err){ console.error(err); fallidos.push(rowId); siguiente(); });
+        .catch(function(err){
+          console.error("Fallo al actualizar pedido "+rowId+":", err);
+          fallidos.push({ id: rowId, msg: (err && (err.message || err.response)) || "error desconocido" });
+          siguiente();
+        });
     }
     siguiente();
   });
