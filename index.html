@@ -2395,10 +2395,19 @@
   function importHoraPara(seed){ return IMPORT_HORAS[Math.abs(seed) % IMPORT_HORAS.length]; }
   function fechaExcelToDateOnly(v){
     if(v instanceof Date && !isNaN(v)) return v;
+    // Respaldo por si alguna celda llega como número de serie de Excel en vez de Date
+    // (no debería pasar con cellDates:true, pero por si acaso).
+    if(typeof v === "number" && v > 0){
+      var d = new Date(Math.round((v - 25569) * 86400 * 1000));
+      if(!isNaN(d)) return d;
+    }
     return null;
   }
+  // Las fechas que entrega SheetJS (con cellDates:true) están ancladas a medianoche UTC — hay
+  // que leerlas con los getters UTC, o en zonas horarias detrás de UTC (como Panamá) el día se
+  // corre uno hacia atrás.
   function fmtDateISO(d){
-    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    return d.getUTCFullYear()+"-"+String(d.getUTCMonth()+1).padStart(2,"0")+"-"+String(d.getUTCDate()).padStart(2,"0");
   }
   function fmtDateTimeISO(d, hora){
     return fmtDateISO(d)+"T"+String(hora).padStart(2,"0")+":00";
@@ -2455,7 +2464,7 @@
         if((proveedorRaw==null || proveedorRaw==="") && (pedidoRaw==null || pedidoRaw==="")) continue; // fila en blanco
         var fechaPedidoRaw = fechaExcelToDateOnly(cm.fecha_pedido!==undefined ? row[cm.fecha_pedido] : null);
         // Solo se importan pedidos con "Fecha de Pedido" registrada en 2026 — lo demás se descarta.
-        if(!fechaPedidoRaw || fechaPedidoRaw.getFullYear() !== 2026){ descartadas++; continue; }
+        if(!fechaPedidoRaw || fechaPedidoRaw.getUTCFullYear() !== 2026){ descartadas++; continue; }
         var proveedor = String(proveedorRaw||"").trim();
         var numeroPedido = normImportNumPedido(pedidoRaw);
         if(!proveedor || !numeroPedido){ descartadas++; continue; }
@@ -2568,7 +2577,10 @@
       reader.onload = function(e){
         var resultado;
         try {
-          var wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
+          // OJO: cellDates:true es obligatorio aquí — sin esto, SheetJS entrega las fechas
+          // como números de serie de Excel en vez de objetos Date, y TODAS las filas se
+          // descartaban por no poder leer "Fecha de Pedido" (bug real detectado en producción).
+          var wb = XLSX.read(new Uint8Array(e.target.result), { type:"array", cellDates:true });
           resultado = procesarImportHistExcel(wb);
         } catch(err){
           console.error(err);
