@@ -399,6 +399,7 @@
       <button class="btn-secondary" id="settingsBtn">⚙ Umbral: <span id="umbralLabel">20</span>d</button>
       <button class="btn-secondary" id="consolidateBtn">🧾 Consolidar despacho</button>
       <button class="btn-secondary" id="groupBtn">👥 Grupo múltiple</button>
+      <button class="btn-secondary" id="importHistBtn">📊 Importar histórico</button>
       <button class="btn-primary" id="addBtn">＋ Agregar pedido</button>
     </div>
   </div>
@@ -485,6 +486,20 @@
     <div class="modal-foot">
       <button class="icon-btn" id="consolidateCancelBtn" style="flex:1;justify-content:center;">Cancelar</button>
       <button class="btn-primary" id="consolidateApplyBtn" style="flex:2;">Aplicar a los pedidos seleccionados</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="importHistModal">
+  <div class="modal-box" style="max-width:760px;">
+    <div class="modal-head">
+      <div class="modal-title">📊 Importar histórico (Cuadro Zona Libre)<small>Sube el Excel que maneja tu compañero — actualiza pedidos existentes y crea los que falten, sin tocar los campos de despacho Sababa</small></div>
+      <button class="modal-close" id="importHistClose">✕</button>
+    </div>
+    <div class="modal-body" id="importHistBody"></div>
+    <div class="modal-foot">
+      <button class="icon-btn" id="importHistCancelBtn" style="flex:1;justify-content:center;">Cancelar</button>
+      <button class="btn-primary hidden" id="importHistApplyBtn" style="flex:2;">Aplicar importación</button>
     </div>
   </div>
 </div>
@@ -2333,6 +2348,303 @@
     };
     reader.readAsArrayBuffer(file);
   }
+
+  // ---------- importar histórico desde el "Cuadro de Proveedores de Zona Libre" ----------
+  // Este Excel lo mantiene el compañero del comprador, por fuera de esta app. Es la fuente de
+  // verdad para los pedidos VIEJOS que quedaron sin capturar aquí — no toca los campos de
+  // despacho a Sababa (piezas, N° embarque, fecha de despacho, factura fiscal Sababa, etc.),
+  // esos siguen siendo exclusivos de "Consolidar despacho" dentro de esta app.
+  // Se puede volver a subir el mismo Excel más adelante (actualizado) sin duplicar nada: cada
+  // fila se cruza por Proveedor + N° de pedido contra lo que ya existe, y solo actualiza si
+  // encuentra coincidencia; si no existe, crea el pedido nuevo.
+  function normImportTxt(s){
+    return String(s==null?"":s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim();
+  }
+  function normImportNumPedido(v){
+    if(v==null || v==="") return "";
+    if(typeof v === "number") return String(Number.isInteger(v) ? v : v).replace(/\.0$/,"");
+    return String(v).trim().replace(/\.0$/,"");
+  }
+  var IMPORT_HEADER_RULES = [
+    { f:"proveedor",               m:function(h){ return h==="proveedores"; } },
+    { f:"numero_pedido",           m:function(h){ return h==="pedidos"; } },
+    { f:"comprador",               m:function(h){ return h==="comprador"; } },
+    { f:"departamento",            m:function(h){ return h==="departamento"; } },
+    { f:"categoria_departamento",  m:function(h){ return h==="division"; } },
+    { f:"tipo_raw",                m:function(h){ return h==="tipo"; } },
+    { f:"fecha_pedido",            m:function(h){ return h==="fecha de pedido"; } },
+    { f:"fecha_aprobacion",        m:function(h){ return h.indexOf("fecha de aprobado comprador")!==-1; } },
+    { f:"fecha_aprobacion_gerente",m:function(h){ return h.indexOf("monasterio")!==-1 && h.indexOf("fecha")!==-1; } },
+    { f:"monto_pedido",            m:function(h){ return h==="monto inicial"; } },
+    { f:"bultos_inicial",          m:function(h){ return h==="bultos inicial"; } },
+    { f:"numero_factura",          m:function(h){ return h==="# factura" || h==="factura"; } },
+    { f:"monto_ajustado",          m:function(h){ return h==="monto final"; } },
+    { f:"monto_oc_homologada",     m:function(h){ return h==="monto homologado"; } },
+    { f:"costo_landed",            m:function(h){ return h.indexOf("landed")!==-1; } },
+    { f:"bultos_final",            m:function(h){ return h==="bultos final"; } },
+    { f:"fecha_recepcion_bodega",  m:function(h){ return h.indexOf("entrega en bodega")!==-1; } },
+    { f:"numero_oc_madre",         m:function(h){ return h.indexOf("# oc")!==-1; } },
+    { f:"fecha_orden_compra",      m:function(h){ return h.indexOf("fecha de oc")!==-1; } },
+    { f:"numero_recibo",           m:function(h){ return h.indexOf("# recibo")!==-1; } },
+    { f:"fecha_recepcion_final",   m:function(h){ return h.indexOf("recibido en cdf")!==-1; } }
+  ];
+  // Horas "inventadas" para las fechas que en el Excel solo traen día (sin hora) pero en esta
+  // app se guardan como fecha+hora — se reparten entre 10am y 1pm en vez de dejarlas todas a la
+  // misma hora exacta, tal como se pidió.
+  var IMPORT_HORAS = [10, 11, 12, 13];
+  function importHoraPara(seed){ return IMPORT_HORAS[Math.abs(seed) % IMPORT_HORAS.length]; }
+  function fechaExcelToDateOnly(v){
+    if(v instanceof Date && !isNaN(v)) return v;
+    return null;
+  }
+  function fmtDateISO(d){
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  }
+  function fmtDateTimeISO(d, hora){
+    return fmtDateISO(d)+"T"+String(hora).padStart(2,"0")+":00";
+  }
+  function matchComprador(raw){
+    var n = normImportTxt(raw);
+    if(!n) return null;
+    var hit = COMPRADORES.find(function(c){
+      var cn = normImportTxt(c);
+      var partes = cn.split(" ");
+      // "Alberto S." / "Alberto Silvera" -> compara nombre + inicial del apellido
+      return cn === n || (n.indexOf(partes[0]) === 0 && n.indexOf(partes[1] ? partes[1][0] : "") !== -1);
+    });
+    return hit || String(raw).trim();
+  }
+
+  function detectarHojaImport(workbook, sheetName){
+    var rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header:1, defval:null });
+    for(var i=0;i<Math.min(rows.length,12);i++){
+      var row = rows[i];
+      if(!row) continue;
+      var colMap = {};
+      row.forEach(function(c, ci){
+        if(typeof c !== "string") return;
+        var h = normImportTxt(c);
+        IMPORT_HEADER_RULES.forEach(function(rule){ if(rule.m(h) && colMap[rule.f]===undefined) colMap[rule.f] = ci; });
+      });
+      if(colMap.proveedor!==undefined && colMap.numero_pedido!==undefined && colMap.fecha_pedido!==undefined){
+        return { rows: rows, headerRowIdx: i, colMap: colMap };
+      }
+    }
+    return null;
+  }
+
+  var importHistParsed = null; // { paraCrear:[...], paraActualizar:[...], descartadas:n }
+
+  function procesarImportHistExcel(workbook){
+    var paraCrear = [], paraActualizar = [], descartadas = 0, filaIdx = 0;
+    var pedidosPorClave = {};
+    state.pedidos.forEach(function(p){
+      var clave = normImportTxt(p.proveedor)+"|"+normImportNumPedido(p.numero_pedido);
+      if(clave!=="|") pedidosPorClave[clave] = p;
+    });
+
+    workbook.SheetNames.forEach(function(sheetName){
+      var info = detectarHojaImport(workbook, sheetName);
+      if(!info) return;
+      for(var r=info.headerRowIdx+1; r<info.rows.length; r++){
+        var row = info.rows[r];
+        if(!row) continue;
+        var cm = info.colMap;
+        var proveedorRaw = cm.proveedor!==undefined ? row[cm.proveedor] : null;
+        var pedidoRaw = cm.numero_pedido!==undefined ? row[cm.numero_pedido] : null;
+        if((proveedorRaw==null || proveedorRaw==="") && (pedidoRaw==null || pedidoRaw==="")) continue; // fila en blanco
+        var fechaPedidoRaw = fechaExcelToDateOnly(cm.fecha_pedido!==undefined ? row[cm.fecha_pedido] : null);
+        // Solo se importan pedidos con "Fecha de Pedido" registrada en 2026 — lo demás se descarta.
+        if(!fechaPedidoRaw || fechaPedidoRaw.getFullYear() !== 2026){ descartadas++; continue; }
+        var proveedor = String(proveedorRaw||"").trim();
+        var numeroPedido = normImportNumPedido(pedidoRaw);
+        if(!proveedor || !numeroPedido){ descartadas++; continue; }
+        // Descarta placeholders de captura como "Pedido" / "PEDIDO" / "Pedidos" que a veces quedan
+        // en la columna en vez del número real — de lo contrario varios pedidos distintos del mismo
+        // proveedor chocarían entre sí bajo la misma clave falsa.
+        var pedNorm = normImportTxt(numeroPedido);
+        if(/^[a-z]+$/.test(pedNorm) && pedNorm.indexOf("ped")===0){ descartadas++; continue; }
+        filaIdx++;
+        var seed = (proveedor.length*7 + numeroPedido.length*3 + filaIdx);
+        var data = {};
+        data.fecha_pedido = fmtDateTimeISO(fechaPedidoRaw, importHoraPara(seed));
+        if(cm.comprador!==undefined && row[cm.comprador]) data.comprador = matchComprador(row[cm.comprador]);
+        if(cm.departamento!==undefined && row[cm.departamento]) data.departamento = String(row[cm.departamento]).trim();
+        if(cm.categoria_departamento!==undefined && row[cm.categoria_departamento]) data.categoria_departamento = String(row[cm.categoria_departamento]).trim();
+        var tipoEmbarqueGuess = null;
+        if(cm.tipo_raw!==undefined && row[cm.tipo_raw]){
+          var tipoNorm = normImportTxt(row[cm.tipo_raw]);
+          if(tipoNorm==="zona libre") tipoEmbarqueGuess = "local";
+          else if(tipoNorm==="c. exterior" || tipoNorm==="c exterior") tipoEmbarqueGuess = "liquidacion";
+        }
+        if(cm.fecha_aprobacion!==undefined){
+          var fa = fechaExcelToDateOnly(row[cm.fecha_aprobacion]);
+          if(fa) data.fecha_aprobacion = fmtDateTimeISO(fa, importHoraPara(seed+1));
+        }
+        if(cm.fecha_aprobacion_gerente!==undefined){
+          var fag = fechaExcelToDateOnly(row[cm.fecha_aprobacion_gerente]);
+          if(fag) data.fecha_aprobacion_gerente = fmtDateISO(fag);
+        }
+        if(cm.monto_pedido!==undefined && row[cm.monto_pedido]!=null && row[cm.monto_pedido]!==""){
+          var mp = Number(row[cm.monto_pedido]); if(!isNaN(mp)) data.monto_pedido = mp;
+        }
+        if(cm.bultos_inicial!==undefined && row[cm.bultos_inicial]!=null && row[cm.bultos_inicial]!==""){
+          var bi = Number(row[cm.bultos_inicial]); if(!isNaN(bi)) data.bultos_inicial = bi;
+        }
+        if(cm.numero_factura!==undefined && row[cm.numero_factura]!=null && row[cm.numero_factura]!==""){
+          data.numero_factura = String(row[cm.numero_factura]).trim().replace(/^n[°ºo]\.?\s*/i,"");
+        }
+        if(cm.monto_ajustado!==undefined && row[cm.monto_ajustado]!=null && row[cm.monto_ajustado]!==""){
+          var ma = Number(row[cm.monto_ajustado]); if(!isNaN(ma)) data.monto_ajustado = ma;
+        }
+        if(cm.monto_oc_homologada!==undefined && row[cm.monto_oc_homologada]!=null && row[cm.monto_oc_homologada]!==""){
+          var moh = Number(row[cm.monto_oc_homologada]); if(!isNaN(moh)) data.monto_oc_homologada = moh;
+        }
+        if(cm.costo_landed!==undefined && row[cm.costo_landed]!=null && row[cm.costo_landed]!==""){
+          var cl = Number(row[cm.costo_landed]); if(!isNaN(cl)) data.costo_landed = cl;
+        }
+        if(cm.bultos_final!==undefined && row[cm.bultos_final]!=null && row[cm.bultos_final]!==""){
+          var bf = Number(row[cm.bultos_final]); if(!isNaN(bf)) data.bultos_final = bf;
+        }
+        if(cm.fecha_recepcion_bodega!==undefined){
+          var frb = fechaExcelToDateOnly(row[cm.fecha_recepcion_bodega]);
+          if(frb) data.fecha_recepcion_bodega = fmtDateISO(frb);
+        }
+        if(cm.numero_oc_madre!==undefined && row[cm.numero_oc_madre]!=null && row[cm.numero_oc_madre]!==""){
+          data.numero_oc_madre = normImportNumPedido(row[cm.numero_oc_madre]) || String(row[cm.numero_oc_madre]).trim();
+        }
+        if(cm.fecha_orden_compra!==undefined){
+          var foc = fechaExcelToDateOnly(row[cm.fecha_orden_compra]);
+          if(foc) data.fecha_orden_compra = fmtDateTimeISO(foc, importHoraPara(seed+2));
+        }
+        if(cm.numero_recibo!==undefined && row[cm.numero_recibo]!=null && row[cm.numero_recibo]!==""){
+          data.numero_recibo = normImportNumPedido(row[cm.numero_recibo]) || String(row[cm.numero_recibo]).trim();
+        }
+        if(cm.fecha_recepcion_final!==undefined){
+          var frf = fechaExcelToDateOnly(row[cm.fecha_recepcion_final]);
+          if(frf) data.fecha_recepcion_final = fmtDateISO(frf);
+        }
+
+        var clave = normImportTxt(proveedor)+"|"+normImportNumPedido(numeroPedido);
+        var existente = pedidosPorClave[clave];
+        if(existente && existente.id === null){
+          // Ya se había puesto en cola como "nuevo" con esta misma clave en una fila anterior
+          // del propio Excel (proveedor + N° de pedido repetido) — se ignora el duplicado.
+          continue;
+        }
+        if(existente){
+          // OJO: a propósito NO se toca tipo_embarque en pedidos que ya existen — cambiarlo
+          // podría ocultar "piezas"/OC homologada si el equipo ya los venía llenando a mano
+          // (esos campos solo se muestran cuando tipo_embarque no es "liquidacion").
+          paraActualizar.push({ id: existente.id, proveedor: proveedor, numero_pedido: numeroPedido, data: data });
+        } else {
+          data.proveedor = proveedor;
+          data.numero_pedido = numeroPedido;
+          if(tipoEmbarqueGuess) data.tipo_embarque = tipoEmbarqueGuess;
+          paraCrear.push({ proveedor: proveedor, numero_pedido: numeroPedido, data: data });
+          // evita crear el mismo pedido nuevo dos veces si aparece repetido en el propio Excel
+          pedidosPorClave[clave] = { id: null, proveedor: proveedor, numero_pedido: numeroPedido };
+        }
+      }
+    });
+    return { paraCrear: paraCrear, paraActualizar: paraActualizar, descartadas: descartadas };
+  }
+
+  function renderImportHistModal(){
+    importHistParsed = null;
+    var html = '';
+    html += '<div class="muted" style="font-size:12.5px;margin:0 0 12px;line-height:1.5;">Sube el archivo "Cuadro de Proveedores de Zona Libre" (hojas Sababa ZL / Sababa Ext). Solo se importan pedidos con <b>Fecha de Pedido en 2026</b>. Se cruza cada fila por <b>Proveedor + N° de pedido</b>: si ya existe el pedido, se actualiza (sin tocar los campos de despacho Sababa); si no existe, se crea. La fecha de pedido y la fecha de aprobación del comprador no traen hora en el Excel, así que se les asigna una hora entre 10am y 1pm.</div>';
+    html += '<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">'+
+      '<input type="file" id="importHistExcelInput" accept=".xlsx,.xls" style="flex:1;min-width:180px;">'+
+      '<button type="button" class="icon-btn" id="importHistProcessBtn" style="flex:none;">📥 Procesar</button>'+
+    '</div>';
+    html += '<div id="importHistResult"></div>';
+    $("importHistBody").innerHTML = html;
+    $("importHistApplyBtn").classList.add("hidden");
+    $("importHistProcessBtn").addEventListener("click", function(){
+      var file = $("importHistExcelInput").files[0];
+      if(!file){ showToast("Elige primero el Excel", true); return; }
+      var reader = new FileReader();
+      reader.onload = function(e){
+        var resultado;
+        try {
+          var wb = XLSX.read(new Uint8Array(e.target.result), { type:"array" });
+          resultado = procesarImportHistExcel(wb);
+        } catch(err){
+          console.error(err);
+          showToast("No se pudo leer el Excel", true);
+          return;
+        }
+        importHistParsed = resultado;
+        var r = '<div style="margin-top:10px;padding:12px 14px;border:1px solid var(--border);border-radius:10px;font-size:13px;line-height:1.8;">'+
+          '<div>🆕 Pedidos nuevos a crear: <b>'+resultado.paraCrear.length+'</b></div>'+
+          '<div>🔄 Pedidos existentes a actualizar: <b>'+resultado.paraActualizar.length+'</b></div>'+
+          '<div class="muted">Filas descartadas (sin fecha 2026 o incompletas): '+resultado.descartadas+'</div>'+
+        '</div>';
+        $("importHistResult").innerHTML = r;
+        if(resultado.paraCrear.length || resultado.paraActualizar.length){
+          $("importHistApplyBtn").classList.remove("hidden");
+        } else {
+          $("importHistApplyBtn").classList.add("hidden");
+          showToast("No se encontraron filas de 2026 para importar", true);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function openImportHistModal(){
+    renderImportHistModal();
+    $("importHistModal").classList.remove("hidden");
+  }
+  $("importHistBtn").addEventListener("click", openImportHistModal);
+  $("importHistClose").addEventListener("click", function(){ $("importHistModal").classList.add("hidden"); });
+  $("importHistCancelBtn").addEventListener("click", function(){ $("importHistModal").classList.add("hidden"); });
+
+  $("importHistApplyBtn").addEventListener("click", function(){
+    if(!importHistParsed) return;
+    if(!aw){ showToast("No hay conexión a Appwrite configurada", true); return; }
+    var acciones = importHistParsed.paraActualizar.map(function(x){ return { tipo:"update", item:x }; })
+      .concat(importHistParsed.paraCrear.map(function(x){ return { tipo:"create", item:x }; }));
+    if(!acciones.length){ showToast("Nada para importar", true); return; }
+    var applyBtn = this;
+    applyBtn.disabled = true;
+    var ov = showSaveOverlay("Importando "+acciones.length+" pedido(s)…", "Sincronizando con Appwrite");
+    var pendientes = acciones.slice();
+    var creados = 0, actualizados = 0, fallidos = 0, erroresDetalle = [];
+    function siguiente(){
+      if(!pendientes.length){
+        applyBtn.disabled = false;
+        if(fallidos){
+          saveOverlayError(ov, fallidos+" pedido(s) no se pudieron importar: "+(erroresDetalle[0]||""));
+          setTimeout(function(){ ov.remove(); }, 6000);
+        } else {
+          saveOverlaySuccess(ov, actualizados+" actualizado(s) · "+creados+" creado(s)");
+          setTimeout(function(){
+            ov.remove();
+            $("importHistModal").classList.add("hidden");
+            loadPedidos();
+          }, 900);
+        }
+        return;
+      }
+      var acc = pendientes.shift();
+      acc.item.data.updated_at = new Date().toISOString();
+      var req = acc.tipo==="update"
+        ? awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: acc.item.id, data: acc.item.data })
+        : awDb.createRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: aw.ID.unique(), data: acc.item.data });
+      req.then(function(){
+        if(acc.tipo==="update") actualizados++; else creados++;
+        siguiente();
+      }).catch(function(err){
+        console.error(err);
+        fallidos++;
+        erroresDetalle.push((acc.item.proveedor||"")+" #"+(acc.item.numero_pedido||"")+": "+awErrorMsg(err));
+        siguiente();
+      });
+    }
+    siguiente();
+  });
 
   function fmtPiezasExcel(v){ return v==null ? "—" : Math.round(v)+" pzs"; }
 
