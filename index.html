@@ -1021,6 +1021,13 @@
     if(n==null || n==="" || isNaN(n)) return null;
     return "$"+Number(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
   }
+  // "piezas" se guarda como texto en Appwrite (el atributo del servidor es tipo string),
+  // pero para cualquier suma/reporte/cálculo se necesita como número. Usar esta función en vez
+  // de leer p.piezas directamente cuando se vaya a sumar, promediar o comparar piezas.
+  function piezasNum(p){
+    var v = Number(p && p.piezas);
+    return isNaN(v) ? 0 : v;
+  }
   function showToast(msg, isError){
     var t = $("toast");
     t.textContent = msg;
@@ -2182,9 +2189,12 @@
       html += '<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:10px;">';
       candidatos.forEach(function(p){
         var checked = consolidateSelectedIds.has(p.id) ? ' checked' : '';
+        var idTag = p.numero_factura
+          ? ' <span class="muted">Factura #'+esc(p.numero_factura)+'</span>'
+          : (p.numero_pedido ? ' <span class="muted">#'+esc(p.numero_pedido)+'</span>' : '');
         html += '<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13px;">'+
           '<input type="checkbox" class="cfPedidoChk" data-id="'+p.id+'"'+checked+' style="width:auto;flex:none;">'+
-          '<span style="flex:1;">'+esc(p.proveedor||"—")+(p.numero_pedido?' <span class="muted">#'+esc(p.numero_pedido)+'</span>':'')+(p.grupo_multiple?' <span class="muted">· 👥</span>':'')+'</span>'+
+          '<span style="flex:1;">'+esc(p.proveedor||"—")+idTag+(p.grupo_multiple?' <span class="muted">· 👥</span>':'')+'</span>'+
           '<span class="muted" style="font-size:11.5px;">'+esc(estadoPedido(p).label)+'</span>'+
           '<span class="muted" style="font-size:11.5px;">'+(p.bultos_final!=null?p.bultos_final+" blts":"")+'</span>'+
         '</label>';
