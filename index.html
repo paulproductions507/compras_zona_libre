@@ -401,6 +401,7 @@
       <button class="btn-secondary" id="groupBtn">👥 Grupo múltiple</button>
       <button class="btn-secondary" id="importHistBtn">📊 Importar histórico</button>
       <button class="btn-secondary" id="correctorProvBtn">🔧 Corregir proveedores</button>
+      <button class="btn-secondary" id="reclasificarProvBtn">🔁 Reclasificar proveedor</button>
       <button class="btn-primary" id="addBtn">＋ Agregar pedido</button>
     </div>
   </div>
@@ -515,6 +516,19 @@
     <div class="modal-foot">
       <button class="icon-btn" id="correctorProvCancelBtn" style="flex:1;justify-content:center;">Cerrar</button>
       <button class="btn-primary hidden" id="correctorProvApplyBtn" style="flex:2;">Aplicar renombres</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="reclasificarProvModal">
+  <div class="modal-box" style="max-width:700px;">
+    <div class="modal-head">
+      <div class="modal-title">🔁 Reclasificar proveedor<small>Cambia Local ↔ Liquidación para TODOS los pedidos de un proveedor a la vez (ej. Mays quedó como local por defecto, pero en realidad es liquidación)</small></div>
+      <button class="modal-close" id="reclasificarProvClose">✕</button>
+    </div>
+    <div class="modal-body" id="reclasificarProvBody"></div>
+    <div class="modal-foot">
+      <button class="icon-btn" id="reclasificarProvCancelBtn" style="flex:1;justify-content:center;">Cerrar</button>
     </div>
   </div>
 </div>
@@ -1020,6 +1034,33 @@
   function yaEsProveedorLocalCanonico(nombre){
     return /^S\.I\s*-\s*/.test(String(nombre||"").trim());
   }
+  // Inversa de candidatosLocalPara: dado el nombre "regular" (sin "S.I - "), busca su equivalente
+  // "S.I - " en el listado maestro. Se usa al reclasificar de Liquidación -> Local.
+  function candidatosSIPara(nombreActual){
+    var base = String(nombreActual||"").replace(/^S\.I\s*-\s*/,"");
+    var n = normProvTxt(base);
+    if(!n) return [];
+    return PROV_NAMES.filter(function(full){
+      if(full.indexOf("S.I - ")!==0 && full.indexOf("S.I -  ")!==0) return false;
+      var resto = normProvTxt(full.replace(/^S\.I\s*-\s*/,""));
+      if(!resto) return false;
+      return resto.indexOf(n)!==-1 || n.indexOf(resto)!==-1;
+    });
+  }
+  // Inversa: dado un nombre (con o sin "S.I - "), busca su equivalente REGULAR (sin prefijo) en
+  // el listado maestro. Se usa al reclasificar de Local -> Liquidación (Mays, etc. que el Excel
+  // del compañero no distingue y quedaron marcados local por defecto).
+  function candidatosRegularPara(nombreActual){
+    var base = String(nombreActual||"").replace(/^S\.I\s*-\s*/,"");
+    var n = normProvTxt(base);
+    if(!n) return [];
+    return PROV_NAMES.filter(function(full){
+      if(full.indexOf("S.I - ")===0 || full.indexOf("S.I -  ")===0) return false;
+      var resto = normProvTxt(full);
+      if(!resto) return false;
+      return resto.indexOf(n)!==-1 || n.indexOf(resto)!==-1;
+    });
+  }
 
   var correctorProvParsed = null; // { cambios:[{id, actual, propuesto}], sinMatch:[{id, actual}] }
 
@@ -1144,6 +1185,119 @@
     }
     siguiente();
   });
+
+  // ---------- reclasificar proveedor: Local <-> Liquidación para TODOS sus pedidos ----------
+  // El Excel del compañero no distingue local/liquidación de forma confiable (solo trae "Tipo":
+  // Zona Libre / C. Exterior, que no siempre corresponde). Esto deja que, proveedor por
+  // proveedor, se corrija en bloque — ej. "Mays" quedó como local por defecto pero es liquidación.
+  function listaProveedoresParaReclasificar(filtro){
+    var map = {};
+    state.pedidos.forEach(function(p){
+      if(!p.proveedor) return;
+      if(!map[p.proveedor]) map[p.proveedor] = { nombre: p.proveedor, n: 0, nLocal: 0, nLiquidacion: 0 };
+      map[p.proveedor].n++;
+      if(p.tipo_embarque === "liquidacion") map[p.proveedor].nLiquidacion++;
+      else map[p.proveedor].nLocal++;
+    });
+    var lista = Object.values(map);
+    if(filtro){
+      var f = normProvTxt(filtro);
+      lista = lista.filter(function(x){ return normProvTxt(x.nombre).indexOf(f)!==-1; });
+    }
+    lista.sort(function(a,b){ return b.n - a.n; });
+    return lista.slice(0, 60);
+  }
+
+  function renderReclasificarProvModal(filtro){
+    var lista = listaProveedoresParaReclasificar(filtro);
+    var html = '<div class="muted" style="font-size:12.5px;margin:0 0 10px;line-height:1.5;">Busca el proveedor y cambia su clasificación — se aplica a TODOS los pedidos que tengan ese proveedor exacto. Al pasar a Liquidación se intenta también quitar el prefijo "S.I - " (si hay un único equivalente regular); al pasar a Local se intenta agregar el prefijo (si hay un único equivalente "S.I - ").</div>';
+    html += '<input type="text" id="reclasificarProvBuscar" placeholder="Buscar proveedor…" value="'+esc(filtro||"")+'" style="width:100%;margin-bottom:10px;">';
+    html += '<div id="reclasificarProvLista" style="max-height:360px;overflow:auto;border:1px solid var(--border);border-radius:10px;">';
+    if(!lista.length){
+      html += '<div class="muted" style="padding:14px;font-size:12.5px;">Sin resultados.</div>';
+    }
+    lista.forEach(function(x){
+      var esLocalDominante = x.nLocal >= x.nLiquidacion;
+      html += '<div style="padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">'+
+        '<div style="font-size:12.5px;">'+esc(x.nombre)+' <span class="muted">— '+x.n+' pedido(s)'+
+          (x.nLocal && x.nLiquidacion ? ' (mixto: '+x.nLocal+' local / '+x.nLiquidacion+' liquidación)' : (esLocalDominante ? ' · Local' : ' · Liquidación'))+
+        '</span></div>'+
+        '<div style="display:flex;gap:6px;">'+
+          '<button type="button" class="icon-btn reclasificar-btn" data-nombre="'+esc(x.nombre)+'" data-destino="liquidacion" style="font-size:11.5px;padding:6px 10px;">→ Liquidación</button>'+
+          '<button type="button" class="icon-btn reclasificar-btn" data-nombre="'+esc(x.nombre)+'" data-destino="local" style="font-size:11.5px;padding:6px 10px;">→ Local</button>'+
+        '</div>'+
+      '</div>';
+    });
+    html += '</div>';
+    html += '<div id="reclasificarProvResultado" style="margin-top:12px;"></div>';
+    $("reclasificarProvBody").innerHTML = html;
+    $("reclasificarProvBuscar").addEventListener("input", function(){ renderReclasificarProvModal(this.value); $("reclasificarProvBuscar").focus(); });
+    $("reclasificarProvBody").querySelectorAll(".reclasificar-btn").forEach(function(btn){
+      btn.addEventListener("click", function(){ aplicarReclasificacion(btn.dataset.nombre, btn.dataset.destino, btn); });
+    });
+  }
+
+  function aplicarReclasificacion(nombreActual, destino, btnOrigen){
+    if(!aw){ showToast("No hay conexión a Appwrite configurada", true); return; }
+    var pedidosDelProveedor = state.pedidos.filter(function(p){ return p.proveedor === nombreActual; });
+    if(!pedidosDelProveedor.length) return;
+    var nombreNuevo = nombreActual;
+    if(destino === "liquidacion" && yaEsProveedorLocalCanonico(nombreActual)){
+      var candReg = candidatosRegularPara(nombreActual);
+      if(candReg.length === 1) nombreNuevo = candReg[0];
+    } else if(destino === "local" && !yaEsProveedorLocalCanonico(nombreActual)){
+      var candSI = candidatosSIPara(nombreActual);
+      if(candSI.length === 1) nombreNuevo = candSI[0];
+    }
+    if(!confirm('¿Cambiar '+pedidosDelProveedor.length+' pedido(s) de "'+nombreActual+'" a '+(destino==="liquidacion"?"Liquidación":"Local")+(nombreNuevo!==nombreActual ? ' (proveedor pasa a "'+nombreNuevo+'")' : '')+'?')) return;
+    btnOrigen.disabled = true;
+    var ov = showSaveOverlay("Reclasificando "+pedidosDelProveedor.length+" pedido(s)…", "Sincronizando con Appwrite");
+    var pendientes = pedidosDelProveedor.slice();
+    var ok = 0, fallidosLista = [];
+    var PAUSA_MS = 150, PAUSA_RATE_LIMIT_MS = 4000, MAX_INTENTOS = 6;
+    function esErrorRateLimit(err){
+      var msg = String((err && (err.message || err.response)) || "");
+      return (err && err.code === 429) || /rate limit/i.test(msg);
+    }
+    function siguiente(){
+      if(!pendientes.length){
+        loadPedidos();
+        if(fallidosLista.length){
+          ov.remove();
+          var html = '<div style="padding:10px 14px;border:1px solid var(--border);border-radius:10px;font-size:12.5px;">'+
+            '✅ '+ok+' actualizado(s) · ⚠️ '+fallidosLista.length+' con error: '+esc(fallidosLista[0].msg||"")+
+          '</div>';
+          $("reclasificarProvResultado").innerHTML = html;
+        } else {
+          saveOverlaySuccess(ov, ok+" pedido(s) reclasificado(s)");
+          setTimeout(function(){ ov.remove(); renderReclasificarProvModal(""); }, 900);
+        }
+        return;
+      }
+      var p = pendientes[0];
+      p._intentos = (p._intentos||0)+1;
+      var data = { tipo_embarque: destino, updated_at: new Date().toISOString() };
+      if(nombreNuevo !== nombreActual) data.proveedor = nombreNuevo;
+      awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: p.id, data: data })
+        .then(function(){ ok++; pendientes.shift(); setTimeout(siguiente, PAUSA_MS); })
+        .catch(function(err){
+          console.error(err);
+          if(esErrorRateLimit(err) && p._intentos < MAX_INTENTOS){ setTimeout(siguiente, PAUSA_RATE_LIMIT_MS); return; }
+          pendientes.shift();
+          fallidosLista.push({ msg: awErrorMsg(err) });
+          setTimeout(siguiente, PAUSA_MS);
+        });
+    }
+    siguiente();
+  }
+
+  function openReclasificarProvModal(){
+    renderReclasificarProvModal("");
+    $("reclasificarProvModal").classList.remove("hidden");
+  }
+  $("reclasificarProvBtn").addEventListener("click", openReclasificarProvModal);
+  $("reclasificarProvClose").addEventListener("click", function(){ $("reclasificarProvModal").classList.add("hidden"); });
+  $("reclasificarProvCancelBtn").addEventListener("click", function(){ $("reclasificarProvModal").classList.add("hidden"); });
 
   // ---------- utilidades ----------
   function $(id){ return document.getElementById(id); }
