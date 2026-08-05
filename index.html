@@ -2616,47 +2616,87 @@
   $("importHistApplyBtn").addEventListener("click", function(){
     if(!importHistParsed) return;
     if(!aw){ showToast("No hay conexión a Appwrite configurada", true); return; }
-    var acciones = importHistParsed.paraActualizar.map(function(x){ return { tipo:"update", item:x }; })
-      .concat(importHistParsed.paraCrear.map(function(x){ return { tipo:"create", item:x }; }));
+    var acciones = importHistParsed.paraActualizar.map(function(x){ return { tipo:"update", item:x, intentos:0 }; })
+      .concat(importHistParsed.paraCrear.map(function(x){ return { tipo:"create", item:x, intentos:0 }; }));
     if(!acciones.length){ showToast("Nada para importar", true); return; }
     var applyBtn = this;
     applyBtn.disabled = true;
-    var ov = showSaveOverlay("Importando "+acciones.length+" pedido(s)…", "Sincronizando con Appwrite");
+    var total = acciones.length;
+    var ov = showSaveOverlay("Importando "+total+" pedido(s)…", "Sincronizando con Appwrite");
     var pendientes = acciones.slice();
-    var creados = 0, actualizados = 0, fallidos = 0, erroresDetalle = [];
-    function siguiente(){
-      if(!pendientes.length){
-        applyBtn.disabled = false;
-        if(fallidos){
-          saveOverlayError(ov, fallidos+" pedido(s) no se pudieron importar: "+(erroresDetalle[0]||""));
-          setTimeout(function(){ ov.remove(); }, 6000);
-        } else {
-          saveOverlaySuccess(ov, actualizados+" actualizado(s) · "+creados+" creado(s)");
-          setTimeout(function(){
-            ov.remove();
-            $("importHistModal").classList.add("hidden");
-            loadPedidos();
-          }, 900);
-        }
-        return;
+    var creados = 0, actualizados = 0, fallidosLista = [];
+    // Appwrite corta con "Rate limit exceeded" si se manda ráfaga de cientos de peticiones
+    // seguidas — se manda una a la vez con una pausa entre cada una, y si de todos modos llega
+    // el error de rate limit, se reintenta esa misma fila (con espera más larga) en vez de
+    // darla por perdida.
+    var PAUSA_MS = 150, PAUSA_RATE_LIMIT_MS = 4000, MAX_INTENTOS = 6;
+    function esErrorRateLimit(err){
+      var msg = String((err && (err.message || err.response)) || "");
+      return (err && err.code === 429) || /rate limit/i.test(msg);
+    }
+    function terminar(){
+      applyBtn.disabled = false;
+      loadPedidos(); // refresca lo que sí se alcanzó a importar, haya o no fallos
+      if(fallidosLista.length){
+        ov.remove();
+        renderImportHistResultado(creados, actualizados, fallidosLista);
+      } else {
+        saveOverlaySuccess(ov, actualizados+" actualizado(s) · "+creados+" creado(s)");
+        setTimeout(function(){
+          ov.remove();
+          $("importHistModal").classList.add("hidden");
+        }, 900);
       }
-      var acc = pendientes.shift();
+    }
+    function siguiente(){
+      if(!pendientes.length){ terminar(); return; }
+      var acc = pendientes[0];
+      var restantes = pendientes.length;
+      var hechos = total - restantes;
+      var subEl = ov.lastElementChild;
+      if(subEl) subEl.textContent = "Pedido "+(hechos+1)+" de "+total+"…";
       acc.item.data.updated_at = new Date().toISOString();
       var req = acc.tipo==="update"
         ? awDb.updateRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: acc.item.id, data: acc.item.data })
         : awDb.createRow({ databaseId: APPWRITE_DATABASE_ID, tableId: APPWRITE_TABLE_ID, rowId: aw.ID.unique(), data: acc.item.data });
       req.then(function(){
         if(acc.tipo==="update") actualizados++; else creados++;
-        siguiente();
+        pendientes.shift();
+        setTimeout(siguiente, PAUSA_MS);
       }).catch(function(err){
         console.error(err);
-        fallidos++;
-        erroresDetalle.push((acc.item.proveedor||"")+" #"+(acc.item.numero_pedido||"")+": "+awErrorMsg(err));
-        siguiente();
+        acc.intentos++;
+        if(esErrorRateLimit(err) && acc.intentos < MAX_INTENTOS){
+          // No se descarta — se reintenta la misma fila más despacio.
+          setTimeout(siguiente, PAUSA_RATE_LIMIT_MS);
+          return;
+        }
+        pendientes.shift();
+        fallidosLista.push({ proveedor: acc.item.proveedor, numero_pedido: acc.item.numero_pedido, msg: awErrorMsg(err) });
+        setTimeout(siguiente, PAUSA_MS);
       });
     }
     siguiente();
   });
+
+  function renderImportHistResultado(creados, actualizados, fallidosLista){
+    var html = '<div style="padding:12px 14px;border:1px solid var(--border);border-radius:10px;font-size:13px;line-height:1.8;margin-bottom:12px;">'+
+      '<div>✅ Creados: <b>'+creados+'</b> · Actualizados: <b>'+actualizados+'</b></div>'+
+      '<div style="color:#e78a86;">⚠️ No se pudieron importar: <b>'+fallidosLista.length+'</b></div>'+
+    '</div>';
+    html += '<div class="modal-section-title">Historial de errores</div>';
+    html += '<div style="max-height:280px;overflow:auto;border:1px solid var(--border);border-radius:10px;">';
+    fallidosLista.forEach(function(f){
+      html += '<div style="padding:8px 12px;border-bottom:1px solid var(--border);font-size:12.5px;">'+
+        '<b>'+esc(f.proveedor||"—")+'</b> <span class="muted">#'+esc(f.numero_pedido||"")+'</span><br>'+
+        '<span style="color:#e78a86;">'+esc(f.msg||"Error desconocido")+'</span>'+
+      '</div>';
+    });
+    html += '</div>';
+    html += '<div class="muted" style="font-size:12px;margin-top:10px;">Los pedidos que sí se importaron ya quedaron guardados y no se repiten si vuelves a subir el mismo Excel. Puedes cerrar esto y volver a intentar "Importar histórico" para reintentar solo los que fallaron.</div>';
+    $("importHistBody").innerHTML = html;
+    $("importHistApplyBtn").classList.add("hidden");
+  }
 
   function fmtPiezasExcel(v){ return v==null ? "—" : Math.round(v)+" pzs"; }
 
